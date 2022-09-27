@@ -63,11 +63,12 @@ abstract class QueryPlanner[PhysicalPlan <: TreeNode[PhysicalPlan]] {
     // Collect physical plan candidates.
     val candidates = strategies.iterator.flatMap(_(plan))
 
-    MonitorLogger.log("Candidates length: " + candidates.toList.length)
+    val candidateSeq = candidates.toSeq
+    MonitorLogger.log("Candidates length: " + candidateSeq.length)
 
     // The candidates may contain placeholders marked as [[planLater]],
     // so try to replace them by their child plans.
-    val plans = candidates.flatMap { candidate =>
+    val plans = candidateSeq.iterator.flatMap { candidate =>
       val placeholders = collectPlaceholders(candidate)
 
       if (placeholders.isEmpty) {
