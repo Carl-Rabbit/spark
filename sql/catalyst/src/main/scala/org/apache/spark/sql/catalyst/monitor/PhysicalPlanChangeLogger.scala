@@ -27,21 +27,22 @@ class PhysicalPlanChangeLogger[PhysicalPlan <: TreeNode[PhysicalPlan]] {
 
   def logStrategy(strategy: GenericStrategy[PhysicalPlan],
                   logicalPlan: LogicalPlan,
-                  physicalPlans: Seq[PhysicalPlan]): Unit = {
+                  physicalPlans: Seq[PhysicalPlan],
+                  branchCnt: Int): Unit = {
+
+    if (physicalPlans.isEmpty) {
+      MonitorLogger.logMsg(s"${getStrategyName(strategy)} [branchCnt=$branchCnt] has no effect.")
+      return
+    }
+
     def message(): String = {
-      val start =
-        s"""
-           |PhysicalPlanChangeLogger:
-           |=== Applying Strategy ${getStrategyName(strategy)} ===
-           |""".stripMargin
-      val step = "***\n"
-      val end = "\n"
+      val start = s"\n=== Applying Strategy ${getStrategyName(strategy)} " +
+        s"[branchCnt=$branchCnt] ===\n"
       physicalPlans.zipWithIndex.map { case (plan, index) =>
         s"""
            |*** Output $index ***
-           |${sideBySide(logicalPlan.treeString, plan.treeString).mkString("\n")}
-           |""".stripMargin
-      }.mkString(start, step, end)
+           |${sideBySide(logicalPlan.treeString, plan.treeString).mkString("\n")}""".stripMargin
+      }.mkString(start, "\n***\n", "")
     }
 
     MonitorLogger.logMsg(message)
