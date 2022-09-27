@@ -37,12 +37,12 @@ class PhysicalPlanChangeLogger[PhysicalPlan <: TreeNode[PhysicalPlan]] {
 
     def message(): String = {
       val start = s"\n=== Applying Strategy ${getStrategyName(strategy)} " +
-        s"[branchCnt=$branchCnt] ===\n"
+        s"[branchCnt=$branchCnt] ==="
       physicalPlans.zipWithIndex.map { case (plan, index) =>
         s"""
            |*** Output $index ***
            |${sideBySide(logicalPlan.treeString, plan.treeString).mkString("\n")}""".stripMargin
-      }.mkString(start, "\n***\n", "")
+      }.mkString(start, "\n***\n", "\n")
     }
 
     MonitorLogger.logMsg(message)

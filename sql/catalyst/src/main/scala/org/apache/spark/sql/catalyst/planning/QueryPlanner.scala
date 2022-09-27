@@ -68,9 +68,9 @@ abstract class QueryPlanner[PhysicalPlan <: TreeNode[PhysicalPlan]] {
     val candidates = strategies.iterator.flatMap(strategy => {
       val newPlans = strategy(plan)
       physicalPlanChangeLogger.logStrategy(strategy, plan, newPlans, branchCnt)
-      branchCnt += 1
       newPlans
     })
+    branchCnt += 1
 
     val candidateSeq = candidates.toSeq
     MonitorLogger.logMsg("Candidates length=" + candidateSeq.length)
