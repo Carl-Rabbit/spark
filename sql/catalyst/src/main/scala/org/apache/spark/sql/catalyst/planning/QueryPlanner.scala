@@ -20,6 +20,7 @@ package org.apache.spark.sql.catalyst.planning
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.trees.TreeNode
+import org.apache.spark.sql.catalyst.monitor.MonitorLogger
 
 /**
  * Given a [[LogicalPlan]], returns a list of `PhysicalPlan`s that can
@@ -61,6 +62,8 @@ abstract class QueryPlanner[PhysicalPlan <: TreeNode[PhysicalPlan]] {
 
     // Collect physical plan candidates.
     val candidates = strategies.iterator.flatMap(_(plan))
+
+    MonitorLogger.log("Candidates length: " + candidates.length)
 
     // The candidates may contain placeholders marked as [[planLater]],
     // so try to replace them by their child plans.
