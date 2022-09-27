@@ -54,6 +54,8 @@ abstract class GenericStrategy[PhysicalPlan <: TreeNode[PhysicalPlan]] extends L
  * @tparam PhysicalPlan The type of physical plan produced by this [[QueryPlanner]]
  */
 abstract class QueryPlanner[PhysicalPlan <: TreeNode[PhysicalPlan]] {
+  var branchCnt = 0
+
   /** A list of execution strategies that can be used by the planner */
   def strategies: Seq[GenericStrategy[PhysicalPlan]]
 
@@ -65,7 +67,8 @@ abstract class QueryPlanner[PhysicalPlan <: TreeNode[PhysicalPlan]] {
     // Collect physical plan candidates.
     val candidates = strategies.iterator.flatMap(strategy => {
       val newPlans = strategy(plan)
-      physicalPlanChangeLogger.logStrategy(strategy, plan, newPlans)
+      physicalPlanChangeLogger.logStrategy(strategy, plan, newPlans, branchCnt)
+      branchCnt += 1
       newPlans
     })
 
