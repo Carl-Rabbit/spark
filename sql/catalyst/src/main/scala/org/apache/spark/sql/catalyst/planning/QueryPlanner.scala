@@ -18,9 +18,9 @@
 package org.apache.spark.sql.catalyst.planning
 
 import org.apache.spark.internal.Logging
+import org.apache.spark.sql.catalyst.monitor.MonitorLogger
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.trees.TreeNode
-import org.apache.spark.sql.catalyst.monitor.MonitorLogger
 
 /**
  * Given a [[LogicalPlan]], returns a list of `PhysicalPlan`s that can
