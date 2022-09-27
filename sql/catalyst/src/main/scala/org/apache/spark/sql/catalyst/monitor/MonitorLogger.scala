@@ -22,7 +22,7 @@ import org.apache.spark.internal.Logging
 object MonitorLogger extends Logging {
   val PREFIX = "[YZX]"
 
-  def log(msg: => String): Unit = {
+  def logMsg(msg: => String): Unit = {
     val newMsg = MonitorLogger.PREFIX + " " + msg
     logTrace(newMsg)
   }

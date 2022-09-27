@@ -18,7 +18,7 @@
 package org.apache.spark.sql.catalyst.planning
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.catalyst.monitor.MonitorLogger
+import org.apache.spark.sql.catalyst.monitor.{MonitorLogger, PhysicalPlanChangeLogger}
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.trees.TreeNode
 
@@ -60,17 +60,23 @@ abstract class QueryPlanner[PhysicalPlan <: TreeNode[PhysicalPlan]] {
   def plan(plan: LogicalPlan): Iterator[PhysicalPlan] = {
     // Obviously a lot to do here still...
 
+    val physicalPlanChangeLogger = new PhysicalPlanChangeLogger[PhysicalPlan]()
+
     // Collect physical plan candidates.
-    val candidates = strategies.iterator.flatMap(_(plan))
+    val candidates = strategies.iterator.flatMap(strategy => {
+      val newPlans = strategy(plan)
+      physicalPlanChangeLogger.logStrategy(strategy, plan, newPlans)
+      newPlans
+    })
 
     val candidateSeq = candidates.toSeq
-    MonitorLogger.log("Candidates length: " + candidateSeq.length)
+    MonitorLogger.logMsg("Candidates length=" + candidateSeq.length)
 
     // The candidates may contain placeholders marked as [[planLater]],
     // so try to replace them by their child plans.
     val plans = candidateSeq.iterator.flatMap { candidate =>
       val placeholders = collectPlaceholders(candidate)
-
+      MonitorLogger.logMsg("Placeholders length=" + placeholders.length)
       if (placeholders.isEmpty) {
         // Take the candidate as is because it does not contain placeholders.
         Iterator(candidate)
