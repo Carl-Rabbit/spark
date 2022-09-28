@@ -36,13 +36,12 @@ class PhysicalPlanChangeLogger[PhysicalPlan <: TreeNode[PhysicalPlan]] {
     }
 
     def message(): String = {
-      val start = s"\n=== Applying Strategy ${getStrategyName(strategy)} " +
-        s"[branchCnt=$branchCnt] ==="
-      physicalPlans.zipWithIndex.map { case (plan, index) =>
+      val start =
         s"""
-           |*** Output $index ***
-           |${sideBySide(logicalPlan.treeString, plan.treeString).mkString("\n")}""".stripMargin
-      }.mkString(start, "\n***\n", "\n")
+           |\n=== Applying Strategy ${getStrategyName(strategy)} [branchCnt=$branchCnt] ===
+           |${logicalPlan.treeString}
+           |***""".stripMargin
+      physicalPlans.map(plan => plan.treeString).mkString("", "\n***\n", "\n")
     }
 
     MonitorLogger.logMsg(message)
@@ -51,5 +50,13 @@ class PhysicalPlanChangeLogger[PhysicalPlan <: TreeNode[PhysicalPlan]] {
   def getStrategyName(strategy: GenericStrategy[PhysicalPlan]): String = {
     val className = strategy.getClass.getName
     if (className endsWith "$") className.dropRight(1) else className
+  }
+
+  def logStrategyJson(strategy: GenericStrategy[PhysicalPlan],
+                      logicalPlan: LogicalPlan,
+                      physicalPlans: Seq[PhysicalPlan],
+                      branchCnt: Int): Unit = {
+    MonitorLogger.logMsg("JSON\n" + logicalPlan.toJSON)
+    physicalPlans.foreach(plan => MonitorLogger.logMsg("JSON\n" + plan.toJSON))
   }
 }
