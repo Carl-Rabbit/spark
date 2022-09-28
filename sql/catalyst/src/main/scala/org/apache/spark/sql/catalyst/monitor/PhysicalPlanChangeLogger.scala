@@ -39,7 +39,7 @@ class PhysicalPlanChangeLogger[PhysicalPlan <: TreeNode[PhysicalPlan]] {
         s"""
            |\n=== Applying Strategy ${getStrategyName(strategy)} [branchCnt=$branchCnt] ===
            |${logicalPlan.treeString}
-           |***""".stripMargin
+           |***\n""".stripMargin
       physicalPlans.map(plan => plan.treeString).mkString(start, "\n***\n", "\n")
     }
 
