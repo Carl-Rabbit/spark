@@ -21,7 +21,6 @@ package org.apache.spark.sql.catalyst.monitor
 import org.apache.spark.sql.catalyst.planning.GenericStrategy
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.trees.TreeNode
-import org.apache.spark.sql.catalyst.util.sideBySide
 
 class PhysicalPlanChangeLogger[PhysicalPlan <: TreeNode[PhysicalPlan]] {
 
@@ -41,7 +40,7 @@ class PhysicalPlanChangeLogger[PhysicalPlan <: TreeNode[PhysicalPlan]] {
            |\n=== Applying Strategy ${getStrategyName(strategy)} [branchCnt=$branchCnt] ===
            |${logicalPlan.treeString}
            |***""".stripMargin
-      physicalPlans.map(plan => plan.treeString).mkString("", "\n***\n", "\n")
+      physicalPlans.map(plan => plan.treeString).mkString(start, "\n***\n", "\n")
     }
 
     MonitorLogger.logMsg(message)
