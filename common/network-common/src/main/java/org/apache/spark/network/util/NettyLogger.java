@@ -50,13 +50,14 @@ public class NettyLogger {
   private final LoggingHandler loggingHandler;
 
   public NettyLogger() {
-    if (logger.isTraceEnabled()) {
-      loggingHandler = new LoggingHandler(NettyLogger.class, LogLevel.TRACE);
-    } else if (logger.isDebugEnabled()) {
-      loggingHandler = new NoContentLoggingHandler(NettyLogger.class, LogLevel.DEBUG);
-    } else {
-      loggingHandler = null;
-    }
+    loggingHandler = null;
+//    if (logger.isTraceEnabled()) {
+//      loggingHandler = new LoggingHandler(NettyLogger.class, LogLevel.TRACE);
+//    } else if (logger.isDebugEnabled()) {
+//      loggingHandler = new NoContentLoggingHandler(NettyLogger.class, LogLevel.DEBUG);
+//    } else {
+//      loggingHandler = null;
+//    }
   }
 
   public LoggingHandler getLoggingHandler() {
