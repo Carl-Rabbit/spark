@@ -109,10 +109,10 @@ object RecordLogger extends Logging {
     var map: Map[String, String] = Map()
     val m = STRATEGY_INFO_PATTERN.matcher(className)
     if (m.find) {
-      map += ("type" -> f"${m.group(1)} strategy")
-      map += ("strategyName" -> m.group(2))
+      map += ("type" -> f"strategy")
+      map += ("strategyName" -> m.group(1))
     } else {
-      map += ("type" -> "unknown strategy")
+      map += ("type" -> "strategy")
       map += ("strategyName" -> "Unknown")
     }
     map += ("className" -> className)
