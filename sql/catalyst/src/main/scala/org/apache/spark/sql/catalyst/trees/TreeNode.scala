@@ -1109,7 +1109,6 @@ abstract class TreeNode[BaseType <: TreeNode[BaseType]] extends Product with Tre
       jsonValues += ("id" -> Integer.toHexString(hashCode()))
       tn.children.foreach(collectJsonValue)
     }
-    Object
 
     collectJsonValue(this)
     jsonValues
