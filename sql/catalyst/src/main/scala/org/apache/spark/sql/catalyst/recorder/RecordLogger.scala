@@ -48,7 +48,7 @@ object RecordLogger extends Logging {
               effective: Boolean, runTime: Long): Unit = {
     var data = ("batchName" -> batchName) ~
       ("runTime" -> runTime) ~
-      ("effective" -> newPlan.toJsonValue) ~
+      ("effective" -> effective) ~
       ("oldPlan" -> oldPlan.toJsonValue)
     if (effective) {
       data = data ~ ("newPlan" -> newPlan.toJsonValue)
@@ -61,17 +61,24 @@ object RecordLogger extends Logging {
 
   private def extractRuleInfo(rule: Rule[_]): Map[String, String] = {
     var map: Map[String, String] = Map()
+
     var m = RULE_INFO_PATTERN.matcher(rule.ruleName)
-    if (!m.find) {
-      m = RULE_EXECUTION_INFO_PATTERN.matcher(rule.ruleName)
-    }
     if (m.find) {
       map += ("type" -> f"${m.group(1)} rule")
       map += ("ruleName" -> m.group(2))
-    } else {
+    }
+
+    m = RULE_EXECUTION_INFO_PATTERN.matcher(rule.ruleName)
+    if (m.find) {
+      map += ("type" -> f"${m.group(1)} rule")
+      map += ("ruleName" -> m.group(2))
+    }
+
+    if (map.isEmpty) {
       map += ("type" -> "unknown rule")
       map += ("ruleName" -> "Unknown")
     }
+
     map += ("className" -> rule.ruleName)
     map
   }
