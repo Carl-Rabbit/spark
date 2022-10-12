@@ -1105,7 +1105,7 @@ abstract class TreeNode[BaseType <: TreeNode[BaseType]] extends Product with Tre
     def collectJsonValue(tn: BaseType): Unit = {
       val jsonFields = ("class" -> JString(tn.getClass.getName)) ::
         ("num-children" -> JInt(tn.children.length)) ::
-        ("id" -> JString(Integer.toHexString(hashCode()))) ::
+        ("id" -> JString(Integer.toHexString(tn.hashCode()))) ::
         tn.jsonFields
       jsonValues += JObject(jsonFields)
       tn.children.foreach(collectJsonValue)
