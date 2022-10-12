@@ -18,8 +18,8 @@
 package org.apache.spark.sql.catalyst.planning
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.catalyst.monitor.{MonitorLogger, PhysicalPlanChangeLogger}
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
+import org.apache.spark.sql.catalyst.recorder.{MonitorLogger, RecordLogger}
 import org.apache.spark.sql.catalyst.trees.TreeNode
 
 /**
@@ -54,7 +54,9 @@ abstract class GenericStrategy[PhysicalPlan <: TreeNode[PhysicalPlan]] extends L
  * @tparam PhysicalPlan The type of physical plan produced by this [[QueryPlanner]]
  */
 abstract class QueryPlanner[PhysicalPlan <: TreeNode[PhysicalPlan]] {
-  var branchCnt = 0
+  var invokeCnt = 0
+  var recursionCnt = 0
+  var batchCnt = 0
 
   /** A list of execution strategies that can be used by the planner */
   def strategies: Seq[GenericStrategy[PhysicalPlan]]
@@ -62,30 +64,34 @@ abstract class QueryPlanner[PhysicalPlan <: TreeNode[PhysicalPlan]] {
   def plan(plan: LogicalPlan): Iterator[PhysicalPlan] = {
     // Obviously a lot to do here still...
 
-    val physicalPlanChangeLogger = new PhysicalPlanChangeLogger[PhysicalPlan]()
-
     // Collect physical plan candidates.
     val candidates = strategies.iterator.flatMap(strategy => {
+      val startTime = System.nanoTime()
+
       val newPlans = strategy(plan)
-      physicalPlanChangeLogger.logStrategy(strategy, plan, newPlans, branchCnt)
+
+      val runTime = System.nanoTime() - startTime
+      val effective = newPlans.isEmpty
+      RecordLogger.logStrategy(strategy, plan, newPlans,
+        effective, runTime, invokeCnt, recursionCnt, batchCnt)
+
       newPlans
     })
-    branchCnt += 1
+    batchCnt += 1
 
     val candidateSeq = candidates.toSeq
-    MonitorLogger.logMsg("Candidates length=" + candidateSeq.length)
 
     // The candidates may contain placeholders marked as [[planLater]],
     // so try to replace them by their child plans.
     val plans = candidateSeq.iterator.flatMap { candidate =>
       val placeholders = collectPlaceholders(candidate)
-      MonitorLogger.logMsg("Placeholders length=" + placeholders.length)
       if (placeholders.isEmpty) {
         // Take the candidate as is because it does not contain placeholders.
         Iterator(candidate)
       } else {
+        recursionCnt += 1
         // Plan the logical plan marked as [[planLater]] and replace the placeholders.
-        placeholders.iterator.foldLeft(Iterator(candidate)) {
+        val retPlans = placeholders.iterator.foldLeft(Iterator(candidate)) {
           case (candidatesWithPlaceholders, (placeholder, logicalPlan)) =>
             // Plan the logical plan for the placeholder.
             val childPlans = this.plan(logicalPlan)
@@ -99,7 +105,13 @@ abstract class QueryPlanner[PhysicalPlan <: TreeNode[PhysicalPlan]] {
               }
             }
         }
+        recursionCnt -= 1
+        retPlans
       }
+    }
+
+    if (recursionCnt == 0) {
+      invokeCnt += 1
     }
 
     val pruned = prunePlans(plans)

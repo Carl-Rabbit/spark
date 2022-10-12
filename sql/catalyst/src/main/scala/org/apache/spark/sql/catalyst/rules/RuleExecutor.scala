@@ -19,6 +19,7 @@ package org.apache.spark.sql.catalyst.rules
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.QueryPlanningTracker
+import org.apache.spark.sql.catalyst.recorder.RecordLogger
 import org.apache.spark.sql.catalyst.trees.TreeNode
 import org.apache.spark.sql.catalyst.util.DateTimeConstants.NANOS_PER_SECOND
 import org.apache.spark.sql.catalyst.util.sideBySide
@@ -222,6 +223,8 @@ abstract class RuleExecutor[TreeType <: TreeNode[_]] extends Logging {
 
             // Record timing information using QueryPlanningTracker
             tracker.foreach(_.recordRuleInvocation(rule.ruleName, runTime, effective))
+
+            RecordLogger.logRule(batch.name, rule, plan, result, effective, runTime)
 
             // Run the structural integrity checker against the plan after each rule.
             if (effective && !isPlanIntegral(plan, result)) {

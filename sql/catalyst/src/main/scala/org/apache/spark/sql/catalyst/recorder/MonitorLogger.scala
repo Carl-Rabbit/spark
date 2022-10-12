@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.catalyst.monitor
+package org.apache.spark.sql.catalyst.recorder
 
 import org.apache.spark.internal.Logging
 

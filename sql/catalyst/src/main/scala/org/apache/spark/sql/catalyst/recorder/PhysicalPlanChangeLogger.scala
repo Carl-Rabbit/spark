@@ -16,7 +16,7 @@
  */
 
 
-package org.apache.spark.sql.catalyst.monitor
+package org.apache.spark.sql.catalyst.recorder
 
 import org.apache.spark.sql.catalyst.planning.GenericStrategy
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
