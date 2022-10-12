@@ -66,19 +66,20 @@ object RecordLogger extends Logging {
     if (m.find) {
       map += ("type" -> f"${m.group(1)} rule")
       map += ("ruleName" -> m.group(2))
+      map += ("className" -> rule.ruleName)
+      return map
     }
 
     m = RULE_EXECUTION_INFO_PATTERN.matcher(rule.ruleName)
     if (m.find) {
       map += ("type" -> f"${m.group(1)} rule")
       map += ("ruleName" -> m.group(2))
+      map += ("className" -> rule.ruleName)
+      return map
     }
 
-    if (map.isEmpty) {
-      map += ("type" -> "unknown rule")
-      map += ("ruleName" -> "Unknown")
-    }
-
+    map += ("type" -> "unknown rule")
+    map += ("ruleName" -> "Unknown")
     map += ("className" -> rule.ruleName)
     map
   }

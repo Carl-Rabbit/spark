@@ -1097,7 +1097,23 @@ abstract class TreeNode[BaseType <: TreeNode[BaseType]] extends Product with Tre
 
   def prettyJson: String = pretty(render(jsonValue))
 
-  def toJsonValue: JValue = jsonValue
+  def toJsonValue: JValue = myJsonValue
+
+  private def myJsonValue: JValue = {
+    val jsonValues = scala.collection.mutable.ArrayBuffer.empty[JValue]
+
+    def collectJsonValue(tn: BaseType): Unit = {
+      val jsonFields = ("class" -> JString(tn.getClass.getName)) ::
+        ("num-children" -> JInt(tn.children.length)) :: tn.jsonFields
+      jsonValues += JObject(jsonFields)
+      jsonValues += ("id" -> Integer.toHexString(hashCode()))
+      tn.children.foreach(collectJsonValue)
+    }
+    Object
+
+    collectJsonValue(this)
+    jsonValues
+  }
 
   private def jsonValue: JValue = {
     val jsonValues = scala.collection.mutable.ArrayBuffer.empty[JValue]
