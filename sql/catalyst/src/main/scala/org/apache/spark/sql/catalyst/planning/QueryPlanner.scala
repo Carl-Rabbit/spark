@@ -17,6 +17,8 @@
 
 package org.apache.spark.sql.catalyst.planning
 
+import scala.collection.mutable.ListBuffer
+
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.recorder.RecordLogger
@@ -55,8 +57,17 @@ abstract class GenericStrategy[PhysicalPlan <: TreeNode[PhysicalPlan]] extends L
  */
 abstract class QueryPlanner[PhysicalPlan <: TreeNode[PhysicalPlan]] {
   var invokeCnt = 0
-  var recursionCnt = 0
-  var batchCnt = 0
+  var globalRid = 0
+  var ridStack = ListBuffer[Int](0)
+
+  def initGlobalRid(): Unit = {
+    globalRid = 1
+  }
+  def getNewRid: Int = {
+    val newRid = globalRid
+    globalRid += 1
+    newRid
+  }
 
   /** A list of execution strategies that can be used by the planner */
   def strategies: Seq[GenericStrategy[PhysicalPlan]]
@@ -64,32 +75,43 @@ abstract class QueryPlanner[PhysicalPlan <: TreeNode[PhysicalPlan]] {
   def plan(plan: LogicalPlan): Iterator[PhysicalPlan] = {
     // Obviously a lot to do here still...
 
+    if (ridStack.size == 1) {
+      invokeCnt += 1
+      initGlobalRid()
+    }
+    val curRid = ridStack.head
+
     // Collect physical plan candidates.
+    var childRidSeq = Seq[Int]()
     val candidates = strategies.iterator.flatMap(strategy => {
       val startTime = System.nanoTime()
 
       val newPlans = strategy(plan)
 
       val runTime = System.nanoTime() - startTime
-      val effective = newPlans.isEmpty
+      val effective = newPlans.nonEmpty
+      val tempChildRidSeq = newPlans.indices.map(_ => getNewRid)
       RecordLogger.logStrategy(strategy, plan, newPlans,
-        effective, runTime, invokeCnt, recursionCnt, batchCnt)
+        effective, runTime,
+        invokeCnt, curRid, tempChildRidSeq)
+      childRidSeq ++= tempChildRidSeq
 
       newPlans
     })
-    batchCnt += 1
 
     val candidateSeq = candidates.toSeq
 
     // The candidates may contain placeholders marked as [[planLater]],
     // so try to replace them by their child plans.
+    var candidateIdx = -1
     val plans = candidateSeq.iterator.flatMap { candidate =>
+      candidateIdx += 1
       val placeholders = collectPlaceholders(candidate)
       if (placeholders.isEmpty) {
         // Take the candidate as is because it does not contain placeholders.
         Iterator(candidate)
       } else {
-        recursionCnt += 1
+        ridStack.prepend(childRidSeq(candidateIdx))
         // Plan the logical plan marked as [[planLater]] and replace the placeholders.
         val retPlans = placeholders.iterator.foldLeft(Iterator(candidate)) {
           case (candidatesWithPlaceholders, (placeholder, logicalPlan)) =>
@@ -105,17 +127,16 @@ abstract class QueryPlanner[PhysicalPlan <: TreeNode[PhysicalPlan]] {
               }
             }
         }
-        recursionCnt -= 1
+        ridStack.remove(0)
         retPlans
       }
     }
 
-    if (recursionCnt == 0) {
-      invokeCnt += 1
-    }
-
     val pruned = prunePlans(plans)
     assert(pruned.hasNext, s"No plan for $plan")
+
+//    RecordLogger.logStrategyPruned(invokeCnt, curRid, childRidSeq.head)
+
     pruned
   }
 

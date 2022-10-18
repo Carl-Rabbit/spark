@@ -46,7 +46,8 @@ object RecordLogger extends Logging {
   def logRule(batchName: String, rule: Rule[_],
               oldPlan: TreeNode[_], newPlan: TreeNode[_],
               effective: Boolean, runTime: Long): Unit = {
-    var data = ("batchName" -> batchName) ~
+    var data = ("rType" -> "rule") ~
+      ("batchName" -> batchName) ~
       ("runTime" -> runTime) ~
       ("effective" -> effective) ~
       ("oldPlan" -> oldPlan.toJsonValue)
@@ -90,15 +91,16 @@ object RecordLogger extends Logging {
                   effective: Boolean,
                   runTime: Long,
                   invokeCnt: Int,
-                  recursionCnt: Int,
-                  batchCnt: Int): Unit = {
-    var data = ("effective" -> effective) ~
+                  rid: Int,
+                  childRidSeq: Seq[Int]): Unit = {
+    var data = ("rType" -> "strategy") ~
+      ("effective" -> effective) ~
       ("runTime" -> runTime) ~
       ("logicalPlan" -> logicalPlan.toJsonValue) ~
       ("physicalPlans" -> physicalPlans.map(_.toJsonValue)) ~
       ("invokeCnt" -> invokeCnt) ~
-      ("recursionCnt" -> recursionCnt) ~
-      ("batchCnt" -> batchCnt)
+      ("rid" -> rid) ~
+      ("childRidSeq" -> childRidSeq)
     extractStrategyInfo(strategy).iterator.foreach {
       case (k, v) => data = data ~ (k -> v)
     }
@@ -119,4 +121,12 @@ object RecordLogger extends Logging {
     map += ("className" -> className)
     map
   }
+
+//  def logStrategyPruned(invokeCnt: Int, rid: Int, selectedRid: Int): Unit = {
+//    val data = ("rType" -> "pruned") ~
+//      ("invokeCnt" -> invokeCnt) ~
+//      ("rid" -> rid) ~
+//      ("selectedRid" -> selectedRid)
+//    logJson(data)
+//  }
 }
