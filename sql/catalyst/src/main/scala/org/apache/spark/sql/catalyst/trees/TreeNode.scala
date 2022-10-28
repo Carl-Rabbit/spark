@@ -868,6 +868,8 @@ abstract class TreeNode[BaseType <: TreeNode[BaseType]] extends Product with Tre
    */
   def nodeName: String = simpleClassName.replaceAll("Exec$", "")
 
+  def simpleNodeName: String = simpleClassName.replaceAll("Exec$", "")
+
   /**
    * The arguments that should be included in the arg string.  Defaults to the `productIterator`.
    */
@@ -1105,7 +1107,8 @@ abstract class TreeNode[BaseType <: TreeNode[BaseType]] extends Product with Tre
     def collectJsonValue(tn: BaseType): Unit = {
       val jsonFields = ("class" -> JString(tn.getClass.getName)) ::
         ("num-children" -> JInt(tn.children.length)) ::
-        ("id" -> JString(Integer.toHexString(tn.hashCode()))) ::
+        ("node-name" -> JString(tn.simpleNodeName)) ::
+        ("str" -> JString(tn.verboseString(SQLConf.get.maxToStringFields))) ::
         tn.jsonFields
       jsonValues += JObject(jsonFields)
       tn.children.foreach(collectJsonValue)
