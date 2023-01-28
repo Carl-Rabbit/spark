@@ -18,6 +18,7 @@
 package org.apache.spark.sql.execution.adaptive
 
 import java.util
+import java.util.UUID
 import java.util.concurrent.LinkedBlockingQueue
 
 import scala.collection.JavaConverters._
@@ -33,6 +34,7 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.logical.{LogicalPlan, ReturnAnswer}
 import org.apache.spark.sql.catalyst.plans.physical.{Distribution, UnspecifiedDistribution}
+import org.apache.spark.sql.catalyst.recorder.RecordLogger
 import org.apache.spark.sql.catalyst.rules.{PlanChangeLogger, Rule}
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.errors.QueryExecutionErrors
@@ -149,7 +151,13 @@ case class AdaptiveSparkPlanExec(
   )
 
   private def optimizeQueryStage(plan: SparkPlan, isFinalStage: Boolean): SparkPlan = {
+    // >>>>>>>>>> qotrace start
+    val batchId = UUID.randomUUID.toString
+    // <<<<<<<<<< qotrace end
     val optimized = queryStageOptimizerRules.foldLeft(plan) { case (latestPlan, rule) =>
+      // <<<<<<<<<< qotrace start
+      val startTime = System.nanoTime()
+      // >>>>>>>>>> qotrace end
       val applied = rule.apply(latestPlan)
       val result = rule match {
         case _: AQEShuffleReadRule if !applied.fastEquals(latestPlan) =>
@@ -170,6 +178,12 @@ case class AdaptiveSparkPlanExec(
           }
         case _ => applied
       }
+      // >>>>>>>>>> qotrace start
+      val runTime = System.nanoTime() - startTime
+      val effective = !result.fastEquals(latestPlan)
+      RecordLogger.logRule("AQE Query Stage Optimization",
+        batchId, rule, latestPlan, result, effective, runTime)
+      // <<<<<<<<<< qotrace end
       planChangeLogger.logRule(rule.ruleName, latestPlan, result)
       result
     }
@@ -764,12 +778,39 @@ object AdaptiveSparkPlanExec {
       plan: SparkPlan,
       rules: Seq[Rule[SparkPlan]],
       loggerAndBatchName: Option[(PlanChangeLogger[SparkPlan], String)] = None): SparkPlan = {
+    // >>>>>>>>>> qotrace start
+    val batchId = UUID.randomUUID.toString
+    // <<<<<<<<<< qotrace end
     if (loggerAndBatchName.isEmpty) {
-      rules.foldLeft(plan) { case (sp, rule) => rule.apply(sp) }
+      rules.foldLeft(plan) { case (sp, rule) =>
+        // <<<<<<<<<< qotrace start
+        val startTime = System.nanoTime()
+        // >>>>>>>>>> qotrace end
+
+        val result = rule.apply(sp)
+
+        // >>>>>>>>>> qotrace start
+        val runTime = System.nanoTime() - startTime
+        val effective = !result.fastEquals(sp)
+        RecordLogger.logRule("Unknown batch", batchId, rule, sp, result, effective, runTime)
+        // <<<<<<<<<< qotrace end
+        result
+      }
     } else {
       val (logger, batchName) = loggerAndBatchName.get
       val newPlan = rules.foldLeft(plan) { case (sp, rule) =>
+        // <<<<<<<<<< qotrace start
+        val startTime = System.nanoTime()
+        // >>>>>>>>>> qotrace end
+
         val result = rule.apply(sp)
+
+        // >>>>>>>>>> qotrace start
+        val runTime = System.nanoTime() - startTime
+        val effective = !result.fastEquals(sp)
+        RecordLogger.logRule(batchName, batchId, rule, sp, result, effective, runTime)
+        // <<<<<<<<<< qotrace end
+
         logger.logRule(rule.ruleName, sp, result)
         result
       }

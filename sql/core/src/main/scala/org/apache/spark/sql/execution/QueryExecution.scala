@@ -20,9 +20,7 @@ package org.apache.spark.sql.execution
 import java.io.{BufferedWriter, OutputStreamWriter}
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
-
 import org.apache.hadoop.fs.Path
-
 import org.apache.spark.SparkException
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
@@ -32,6 +30,7 @@ import org.apache.spark.sql.catalyst.analysis.UnsupportedOperationChecker
 import org.apache.spark.sql.catalyst.expressions.codegen.ByteCodeStats
 import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.catalyst.plans.logical.{AppendData, Command, CommandResult, CreateTableAsSelect, LogicalPlan, OverwriteByExpression, OverwritePartitionsDynamic, ReplaceTableAsSelect, ReturnAnswer}
+import org.apache.spark.sql.catalyst.recorder.RecordLogger
 import org.apache.spark.sql.catalyst.rules.{PlanChangeLogger, Rule}
 import org.apache.spark.sql.catalyst.util.StringUtils.PlanStringConcat
 import org.apache.spark.sql.catalyst.util.truncatedString
@@ -436,8 +435,22 @@ object QueryExecution {
       preparations: Seq[Rule[SparkPlan]],
       plan: SparkPlan): SparkPlan = {
     val planChangeLogger = new PlanChangeLogger[SparkPlan]()
+    // >>>>>>>>>> qotrace start
+    val batchId = UUID.randomUUID.toString
+    // <<<<<<<<<< qotrace end
     val preparedPlan = preparations.foldLeft(plan) { case (sp, rule) =>
+      // <<<<<<<<<< qotrace start
+      val startTime = System.nanoTime()
+      // >>>>>>>>>> qotrace end
+
       val result = rule.apply(sp)
+
+      // >>>>>>>>>> qotrace start
+      val runTime = System.nanoTime() - startTime
+      val effective = !result.fastEquals(sp)
+      RecordLogger.logRule("Preparations", batchId, rule, sp, result, effective, runTime)
+      // <<<<<<<<<< qotrace end
+
       planChangeLogger.logRule(rule.ruleName, sp, result)
       result
     }

@@ -56,9 +56,9 @@ abstract class GenericStrategy[PhysicalPlan <: TreeNode[PhysicalPlan]] extends L
  * @tparam PhysicalPlan The type of physical plan produced by this [[QueryPlanner]]
  */
 abstract class QueryPlanner[PhysicalPlan <: TreeNode[PhysicalPlan]] {
-  var invokeCnt = 0
-  var globalRid = 0
-  var ridStack = ListBuffer[Int](0)
+  private var invokeCnt = 0
+  private var globalRid = 0
+  private val ridStack = ListBuffer[Int](0)
 
   def initGlobalRid(): Unit = {
     globalRid = 1
@@ -135,7 +135,7 @@ abstract class QueryPlanner[PhysicalPlan <: TreeNode[PhysicalPlan]] {
     val pruned = prunePlans(plans)
     assert(pruned.hasNext, s"No plan for $plan")
 
-//    RecordLogger.logStrategyPruned(invokeCnt, curRid, childRidSeq.head)
+    RecordLogger.logStrategyPruned(invokeCnt, curRid, childRidSeq.head)
 
     pruned
   }

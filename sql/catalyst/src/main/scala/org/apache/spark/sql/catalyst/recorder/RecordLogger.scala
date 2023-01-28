@@ -29,6 +29,7 @@ import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.catalyst.trees.TreeNode
 
 object RecordLogger extends Logging {
+
   val PREFIX = "[RECORD]"
 
   private val RULE_INFO_PATTERN = Pattern
@@ -43,11 +44,12 @@ object RecordLogger extends Logging {
     logTrace(str)
   }
 
-  def logRule(batchName: String, rule: Rule[_],
+  def logRule(batchName: String, batchId: String, rule: Rule[_],
               oldPlan: TreeNode[_], newPlan: TreeNode[_],
               effective: Boolean, runTime: Long): Unit = {
     var data = ("rType" -> "rule") ~
       ("batchName" -> batchName) ~
+      ("batchId" -> batchId) ~
       ("runTime" -> runTime) ~
       ("effective" -> effective) ~
       ("oldPlan" -> oldPlan.toJsonValue)
@@ -122,11 +124,11 @@ object RecordLogger extends Logging {
     map
   }
 
-//  def logStrategyPruned(invokeCnt: Int, rid: Int, selectedRid: Int): Unit = {
-//    val data = ("rType" -> "pruned") ~
-//      ("invokeCnt" -> invokeCnt) ~
-//      ("rid" -> rid) ~
-//      ("selectedRid" -> selectedRid)
-//    logJson(data)
-//  }
+  def logStrategyPruned(invokeCnt: Int, rid: Int, selectedRid: Int): Unit = {
+    val data = ("rType" -> "pruned") ~
+      ("invokeCnt" -> invokeCnt) ~
+      ("rid" -> rid) ~
+      ("selectedRid" -> selectedRid)
+    logJson(data)
+  }
 }

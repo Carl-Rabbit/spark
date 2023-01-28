@@ -17,6 +17,8 @@
 
 package org.apache.spark.sql.catalyst.rules
 
+import java.util.UUID
+
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.QueryPlanningTracker
 import org.apache.spark.sql.catalyst.recorder.RecordLogger
@@ -54,6 +56,13 @@ class PlanChangeLogger[TreeType <: TreeNode[_]] extends Logging {
   private val logBatches = SQLConf.get.planChangeBatches.map(Utils.stringToSeq)
 
   def logRule(ruleName: String, oldPlan: TreeType, newPlan: TreeType): Unit = {
+//    val trace = Thread.currentThread.getStackTrace.apply(2)
+//    val className = trace.getClassName
+//    val methodName = trace.getMethodName
+//    val lineNumber = trace.getLineNumber
+//    logBasedOnLevel(s"$className $methodName $lineNumber")
+//    Thread.dumpStack()
+
     if (!newPlan.fastEquals(oldPlan)) {
       if (logRules.isEmpty || logRules.get.contains(ruleName)) {
         def message(): String = {
@@ -204,6 +213,10 @@ abstract class RuleExecutor[TreeType <: TreeNode[_]] extends Logging {
       var lastPlan = curPlan
       var continue = true
 
+      // >>>>>>>>>> qotrace start
+      val batchId = UUID.randomUUID.toString
+      // <<<<<<<<<< qotrace end
+
       // Run until fix point (or the max number of iterations as specified in the strategy.
       while (continue) {
         curPlan = batch.rules.foldLeft(curPlan) {
@@ -224,7 +237,9 @@ abstract class RuleExecutor[TreeType <: TreeNode[_]] extends Logging {
             // Record timing information using QueryPlanningTracker
             tracker.foreach(_.recordRuleInvocation(rule.ruleName, runTime, effective))
 
-            RecordLogger.logRule(batch.name, rule, plan, result, effective, runTime)
+            // >>>>>>>>>> qotrace start
+            RecordLogger.logRule(batch.name, batchId, rule, plan, result, effective, runTime)
+            // <<<<<<<<<< qotrace end
 
             // Run the structural integrity checker against the plan after each rule.
             if (effective && !isPlanIntegral(plan, result)) {

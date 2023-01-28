@@ -1105,13 +1105,31 @@ abstract class TreeNode[BaseType <: TreeNode[BaseType]] extends Product with Tre
     val jsonValues = scala.collection.mutable.ArrayBuffer.empty[JValue]
 
     def collectJsonValue(tn: BaseType): Unit = {
-      val jsonFields = ("class" -> JString(tn.getClass.getName)) ::
-        ("num-children" -> JInt(tn.children.length)) ::
-        ("node-name" -> JString(tn.simpleNodeName)) ::
-        ("str" -> JString(tn.verboseString(SQLConf.get.maxToStringFields))) ::
-        tn.jsonFields
-      jsonValues += JObject(jsonFields)
-      tn.children.foreach(collectJsonValue)
+      if (tn.simpleNodeName.equals("PlanLater")) {
+        val planField = tn.getClass.getDeclaredField("plan")
+        planField.setAccessible(true)
+        val tn2 = planField.get(tn).asInstanceOf[BaseType]
+
+        val jsonFields = ("class" -> JString(tn2.getClass.getName)) ::
+          ("num-children" -> JInt(tn2.children.length)) ::
+          ("node-name" -> JString(tn2.simpleNodeName)) ::
+          ("addr" -> JInt(tn2.hashCode())) ::
+          ("plan-later" -> JInt(tn.hashCode())) ::
+          ("str" -> JString(tn2.verboseString(SQLConf.get.maxToStringFields))) ::
+          tn2.jsonFields
+        jsonValues += JObject(jsonFields)
+        tn2.children.foreach(collectJsonValue)
+
+      } else {
+        val jsonFields = ("class" -> JString(tn.getClass.getName)) ::
+          ("num-children" -> JInt(tn.children.length)) ::
+          ("node-name" -> JString(tn.simpleNodeName)) ::
+          ("addr" -> JInt(tn.hashCode())) ::
+          ("str" -> JString(tn.verboseString(SQLConf.get.maxToStringFields))) ::
+          tn.jsonFields
+        jsonValues += JObject(jsonFields)
+        tn.children.foreach(collectJsonValue)
+      }
     }
 
     collectJsonValue(this)
