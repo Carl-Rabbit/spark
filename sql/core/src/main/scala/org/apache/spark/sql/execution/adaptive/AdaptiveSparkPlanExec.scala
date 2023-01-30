@@ -323,6 +323,11 @@ case class AdaptiveSparkPlanExec(
           currentPhysicalPlan = newPhysicalPlan
           currentLogicalPlan = newLogicalPlan
           stagesToReplace = Seq.empty[QueryStageExec]
+        } else {
+          // >>>>>>>>>> qotrace start
+          RecordLogger.logOperation("AQE Replanning Cancel", UUID.randomUUID().toString,
+            "UndoReplanning", newPhysicalPlan, currentLogicalPlan)
+          // <<<<<<<<<< qotrace end
         }
         // Now that some stages have finished, we can try creating new stages.
         result = createQueryStages(currentPhysicalPlan)
@@ -642,6 +647,15 @@ case class AdaptiveSparkPlanExec(
         val newLogicalPlan = logicalPlan.transformDown {
           case p if p.eq(logicalNode) => newLogicalNode
         }
+
+        // >>>>>>>>>> qotrace start
+        RecordLogger.logOperation(
+          "AQE Preparation",
+          UUID.randomUUID().toString,
+          "ReplaceWithLogicalQueryStage",
+          logicalPlan, newLogicalPlan)
+        // <<<<<<<<<< qotrace end
+
         logicalPlan = newLogicalPlan
 
       case _ => // Ignore those earlier stages that have been wrapped in later stages.
@@ -655,7 +669,13 @@ case class AdaptiveSparkPlanExec(
   private def reOptimize(logicalPlan: LogicalPlan): (SparkPlan, LogicalPlan) = {
     logicalPlan.invalidateStatsCache()
     val optimized = optimizer.execute(logicalPlan)
-    val sparkPlan = context.session.sessionState.planner.plan(ReturnAnswer(optimized)).next()
+    // >>>>>>>>>> qotrace start
+    val optimizedWithReturn = ReturnAnswer(optimized)
+    RecordLogger.logOperation("AQE Preparation", UUID.randomUUID().toString, "InsertReturnAnswer",
+      optimized, optimizedWithReturn)
+    val sparkPlan = context.session.sessionState.planner.plan(optimizedWithReturn).next()
+    // val sparkPlan = context.session.sessionState.planner.plan(ReturnAnswer(optimized)).next()
+    // <<<<<<<<<< qotrace end
     val newPlan = applyPhysicalRules(
       sparkPlan,
       preprocessingRules ++ queryStagePreparationRules,
@@ -673,6 +693,14 @@ case class AdaptiveSparkPlanExec(
         if (!newPlan.isInstanceOf[BroadcastExchangeLike]) => b.withNewChildren(Seq(newPlan))
       case _ => newPlan
     }
+
+    // >>>>>>>>>> qotrace start
+    if (finalPlan != newPlan) {
+      RecordLogger.logOperation("AQE Replanning", UUID.randomUUID().toString,
+        "FixDuplicatedBroadcastNode",
+        newPlan, finalPlan)
+    }
+    // <<<<<<<<<< qotrace end
 
     (finalPlan, optimized)
   }

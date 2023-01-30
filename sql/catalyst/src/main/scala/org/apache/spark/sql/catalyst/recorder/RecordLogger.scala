@@ -44,6 +44,17 @@ object RecordLogger extends Logging {
     logTrace(str)
   }
 
+  def logOperation(batchName: String, batchId: String, name: String,
+              oldPlan: TreeNode[_], newPlan: TreeNode[_]): Unit = {
+    val data = ("rType" -> "opt") ~
+      ("batchName" -> batchName) ~
+      ("batchId" -> batchId) ~
+      ("effective" -> true) ~
+      ("oldPlan" -> oldPlan.toJsonValue) ~
+      ("newPlan" -> newPlan.toJsonValue)
+    logJson(data)
+  }
+
   def logRule(batchName: String, batchId: String, rule: Rule[_],
               oldPlan: TreeNode[_], newPlan: TreeNode[_],
               effective: Boolean, runTime: Long): Unit = {
