@@ -23,8 +23,10 @@ import org.json4s._
 import org.json4s.JsonDSL._
 import org.json4s.jackson.JsonMethods._
 
+import org.apache.spark.MapOutputStatistics
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.planning.GenericStrategy
+import org.apache.spark.sql.catalyst.plans.logical.{JoinHint, Statistics}
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.catalyst.trees.TreeNode
 
@@ -47,6 +49,7 @@ object RecordLogger extends Logging {
   def logOperation(batchName: String, batchId: String, name: String,
               oldPlan: TreeNode[_], newPlan: TreeNode[_]): Unit = {
     val data = ("rType" -> "opt") ~
+      ("name" -> name) ~
       ("batchName" -> batchName) ~
       ("batchId" -> batchId) ~
       ("effective" -> true) ~
@@ -140,6 +143,27 @@ object RecordLogger extends Logging {
       ("invokeCnt" -> invokeCnt) ~
       ("rid" -> rid) ~
       ("selectedRid" -> selectedRid)
+    logJson(data)
+  }
+
+  def logJoinSelectionData(plan: TreeNode[_],
+                           leftStats: Statistics, rightStats: Statistics,
+                           hint: JoinHint): Unit = {
+    val data = ("rType" -> "joinSel") ~
+      ("plan" -> plan.toJsonValue) ~
+      ("leftStats" -> leftStats.toJsonValue) ~
+      ("rightStats" -> rightStats.toJsonValue) ~
+      ("hint" -> JString(hint.toString))
+    logJson(data)
+  }
+
+  def logDynamicJoinSelectionData(plan: TreeNode[_],
+                                  mapStat: MapOutputStatistics, threshold: Long): Unit = {
+    val data = ("rType" -> "dyJoinSel") ~
+      ("plan" -> plan.toJsonValue) ~
+      ("shuffleId" -> JInt(mapStat.shuffleId)) ~
+      ("bytes" -> JArray(mapStat.bytesByPartitionId.toList.map(JLong(_)))) ~
+      ("threshold" -> threshold)
     logJson(data)
   }
 }

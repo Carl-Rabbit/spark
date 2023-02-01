@@ -21,6 +21,8 @@ import java.io.{ByteArrayInputStream, ByteArrayOutputStream, DataInputStream, Da
 import java.math.{MathContext, RoundingMode}
 
 import net.jpountz.lz4.{LZ4BlockInputStream, LZ4BlockOutputStream}
+import org.json4s._
+import org.json4s.JsonDSL._
 
 import org.apache.spark.sql.catalyst.catalog.CatalogColumnStat
 import org.apache.spark.sql.catalyst.expressions._
@@ -70,6 +72,32 @@ case class Statistics(
       }
     ).filter(_.nonEmpty).mkString(", ")
   }
+
+  // >>>>>>>>>> qotrace start
+  def fullString: String = {
+    Seq(s"sizeInBytes=${Utils.bytesToString(sizeInBytes)}\n",
+      if (rowCount.isDefined) {
+        // Show row count in scientific notation.
+        s"rowCount=${BigDecimal(rowCount.get,
+          new MathContext(3, RoundingMode.HALF_UP)).toString()}\n"
+      } else {
+        ""
+      },
+      s"attributeStats=${attributeStats.toString}\n",
+      s"attributeStatsSize=${attributeStats.size}\n",
+    ).filter(_.nonEmpty).mkString(", ")
+  }
+
+  def toJsonValue: JValue = {
+    val sizeInBytes = Utils.bytesToString(sizeInBytes)
+    val rowCnt = BigDecimal(rowCount.get,
+      new MathContext(3, RoundingMode.HALF_UP)).toString()
+    val data = ("sizeInBytes" -> JString(sizeInBytes)) ~
+      ("rowCount" -> JString(rowCnt))
+      ("attributes" -> attributeStats.values.map(_.toJsonValue))
+    data
+  }
+  // <<<<<<<<<< qotrace end
 }
 
 
@@ -132,6 +160,18 @@ case class ColumnStat(
       nullCount, updatedColumnStat.nullCount)
     updatedColumnStat.copy(distinctCount = newDistinctCount, nullCount = newNullCount)
   }
+
+  // >>>>>>>>>> qotrace start
+  def toJsonValue: JValue = {
+    ("distinctCount" -> option2jvalue(distinctCount)) ~
+      ("min" -> (if (min.isDefined) JString(min.get.toString) else JNull)) ~
+      ("max" -> (if (max.isDefined) JString(max.get.toString) else JNull)) ~
+      ("nullCount" -> option2jvalue(nullCount)) ~
+      ("avgLen" -> option2jvalue(avgLen)) ~
+      ("maxLen" -> option2jvalue(maxLen)) ~
+      ("histogram" -> (if (histogram.isDefined) true else false))
+  }
+  // <<<<<<<<<< qotrace end
 }
 
 /**

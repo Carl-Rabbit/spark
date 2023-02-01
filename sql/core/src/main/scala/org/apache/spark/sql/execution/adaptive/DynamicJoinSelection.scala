@@ -22,6 +22,7 @@ import org.apache.spark.sql.catalyst.optimizer.JoinSelectionHelper
 import org.apache.spark.sql.catalyst.planning.ExtractEquiJoinKeys
 import org.apache.spark.sql.catalyst.plans.{LeftAnti, LeftOuter, RightOuter}
 import org.apache.spark.sql.catalyst.plans.logical.{HintInfo, Join, JoinStrategyHint, LogicalPlan, NO_BROADCAST_HASH, PREFER_SHUFFLE_HASH, SHUFFLE_HASH}
+import org.apache.spark.sql.catalyst.recorder.RecordLogger
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.internal.SQLConf
 
@@ -59,7 +60,11 @@ object DynamicJoinSelection extends Rule[LogicalPlan] with JoinSelectionHelper {
     plan match {
       case LogicalQueryStage(_, stage: ShuffleQueryStageExec) if stage.isMaterialized
         && stage.mapStats.isDefined =>
-
+        // >>>>>>>>>> qotrace start
+        val threshold =
+          conf.getConf(SQLConf.ADAPTIVE_MAX_SHUFFLE_HASH_JOIN_LOCAL_MAP_THRESHOLD)
+        RecordLogger.logDynamicJoinSelectionData(stage.plan, stage.mapStats.get, threshold)
+        // <<<<<<<<<< qotrace end
         val manyEmptyInPlan = hasManyEmptyPartitions(stage.mapStats.get)
         val canBroadcastPlan = (isLeft && canBuildBroadcastLeft(join.joinType)) ||
           (!isLeft && canBuildBroadcastRight(join.joinType))
