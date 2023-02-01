@@ -89,11 +89,11 @@ case class Statistics(
   }
 
   def toJsonValue: JValue = {
-    val sizeInBytes = Utils.bytesToString(sizeInBytes)
-    val rowCnt = BigDecimal(rowCount.get,
+    val sizeInBytes2 = Utils.bytesToString(sizeInBytes)
+    val rowCount2 = BigDecimal(rowCount.get,
       new MathContext(3, RoundingMode.HALF_UP)).toString()
-    val data = ("sizeInBytes" -> JString(sizeInBytes)) ~
-      ("rowCount" -> JString(rowCnt))
+    val data = ("sizeInBytes" -> JString(sizeInBytes2)) ~
+      ("rowCount" -> JString(rowCount2))
       ("attributes" -> attributeStats.values.map(_.toJsonValue))
     data
   }
