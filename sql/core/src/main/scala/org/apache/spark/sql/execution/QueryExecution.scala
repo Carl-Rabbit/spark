@@ -71,8 +71,15 @@ class QueryExecution(
   }
 
   lazy val analyzed: LogicalPlan = executePhase(QueryPlanningTracker.ANALYSIS) {
+    // >>>>>>>>>> qotrace start
+    RecordLogger.logInfoPhase(RecordLogger.PHASE_START, RecordLogger.ANALYSIS)
+    // <<<<<<<<<< qotrace end
     // We can't clone `logical` here, which will reset the `_analyzed` flag.
-    sparkSession.sessionState.analyzer.executeAndCheck(logical, tracker)
+    val ret = sparkSession.sessionState.analyzer.executeAndCheck(logical, tracker)
+    // >>>>>>>>>> qotrace start
+    RecordLogger.logInfoPhase(RecordLogger.PHASE_END, RecordLogger.ANALYSIS)
+    // <<<<<<<<<< qotrace end
+    ret
   }
 
   lazy val commandExecuted: LogicalPlan = mode match {
@@ -119,6 +126,9 @@ class QueryExecution(
     // the optimizing phase
     assertCommandExecuted()
     executePhase(QueryPlanningTracker.OPTIMIZATION) {
+      // >>>>>>>>>> qotrace start
+      RecordLogger.logInfoPhase(RecordLogger.PHASE_START, RecordLogger.OPTIMIZATION)
+      // <<<<<<<<<< qotrace end
       // clone the plan to avoid sharing the plan instance between different stages like analyzing,
       // optimizing and planning.
       val plan =
@@ -128,6 +138,9 @@ class QueryExecution(
       // `analyzed` state of the LogicalPlan, we set the plan as analyzed here as well out of
       // paranoia.
       plan.setAnalyzed()
+      // >>>>>>>>>> qotrace start
+      RecordLogger.logInfoPhase(RecordLogger.PHASE_END, RecordLogger.OPTIMIZATION)
+      // <<<<<<<<<< qotrace end
       plan
     }
   }
@@ -139,9 +152,17 @@ class QueryExecution(
     // the planning phase
     assertOptimized()
     executePhase(QueryPlanningTracker.PLANNING) {
+      // >>>>>>>>>> qotrace start
+      // invoke lazy computation first
+      val plan = optimizedPlan.clone()
+      RecordLogger.logInfoPhase(RecordLogger.PHASE_START, RecordLogger.PLANNING)
+      val ret = QueryExecution.createSparkPlan(sparkSession, planner, plan)
+      RecordLogger.logInfoPhase(RecordLogger.PHASE_END, RecordLogger.PLANNING)
+      ret
+      // <<<<<<<<<< qotrace end
       // Clone the logical plan here, in case the planner rules change the states of the logical
       // plan.
-      QueryExecution.createSparkPlan(sparkSession, planner, optimizedPlan.clone())
+      // QueryExecution.createSparkPlan(sparkSession, planner, optimizedPlan.clone())
     }
   }
 
@@ -152,9 +173,18 @@ class QueryExecution(
     // that the optimization time is not counted as part of the planning phase.
     assertOptimized()
     executePhase(QueryPlanningTracker.PLANNING) {
+      // >>>>>>>>>> qotrace start
+      // invoke lazy computation first
+      val plan = sparkPlan.clone()
+      RecordLogger.logInfoPhase(RecordLogger.PHASE_START, RecordLogger.PLANNING)
+      val ret = QueryExecution.prepareForExecution(preparations, plan)
+      // We do not add an end flag as the rest part is all included in this phase
+      // RecordLogger.logPhase(RecordLogger.PHASE_END, RecordLogger.EXECUTION)
+      ret
+      // <<<<<<<<<< qotrace end
       // clone the plan to avoid sharing the plan instance between different stages like analyzing,
       // optimizing and planning.
-      QueryExecution.prepareForExecution(preparations, sparkPlan.clone())
+      // QueryExecution.prepareForExecution(preparations, sparkPlan.clone())
     }
   }
 

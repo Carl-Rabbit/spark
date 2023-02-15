@@ -63,7 +63,7 @@ object DynamicJoinSelection extends Rule[LogicalPlan] with JoinSelectionHelper {
         // >>>>>>>>>> qotrace start
         val threshold =
           conf.getConf(SQLConf.ADAPTIVE_MAX_SHUFFLE_HASH_JOIN_LOCAL_MAP_THRESHOLD)
-        RecordLogger.logDynamicJoinSelectionData(stage.plan, stage.mapStats.get, threshold)
+        RecordLogger.logInfoDynamicJoinSelection(stage.plan, stage.mapStats.get, threshold)
         // <<<<<<<<<< qotrace end
         val manyEmptyInPlan = hasManyEmptyPartitions(stage.mapStats.get)
         val canBroadcastPlan = (isLeft && canBuildBroadcastLeft(join.joinType)) ||

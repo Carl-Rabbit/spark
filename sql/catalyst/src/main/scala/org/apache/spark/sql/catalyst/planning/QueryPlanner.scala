@@ -135,7 +135,7 @@ abstract class QueryPlanner[PhysicalPlan <: TreeNode[PhysicalPlan]] {
     val pruned = prunePlans(plans)
     assert(pruned.hasNext, s"No plan for $plan")
 
-    RecordLogger.logStrategyPruned(invokeCnt, curRid, childRidSeq.head)
+    RecordLogger.logInfoStrategyPruned(invokeCnt, curRid, childRidSeq.head)
 
     pruned
   }

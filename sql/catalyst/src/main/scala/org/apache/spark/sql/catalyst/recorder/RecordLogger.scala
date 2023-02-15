@@ -33,6 +33,35 @@ import org.apache.spark.sql.catalyst.trees.TreeNode
 object RecordLogger extends Logging {
 
   val PREFIX = "[RECORD]"
+  val PREFIX_TAMP = "[RECORD_TEMP]"
+
+  // phases
+  val ANALYSIS = "analysis"
+  val OPTIMIZATION = "optimization"
+  val PLANNING = "planning"
+
+  // phase flag
+  val PHASE_START = "start"
+  val PHASE_END = "end"
+
+  // rTypes (record type)
+  val ACTION = "action"
+  val INFO = "info"
+
+  // assign flag
+  val BEFORE = "before"
+  val AFTER = "after"
+  val INDIVIDUAL = "ind"
+
+  // known types
+  val TYPE_ACTION = "action"
+  val TYPE_JOIN_SEL = "join sel"
+  val TYPE_DY_JOIN_SEL = "dy join sel"
+  val TYPE_PHASE = "phase"
+  val TYPE_PRUNED = "pruned"
+  val TYPE_AQE_START = "aqe start"
+  val TYPE_AQE_END = "aqe end"
+  val TYPE_LABEL = "label"
 
   private val RULE_INFO_PATTERN = Pattern
     .compile("org\\.apache\\.spark\\.sql\\.catalyst\\.([^.\\s]+)\\.([^\\s]+)")
@@ -46,9 +75,10 @@ object RecordLogger extends Logging {
     logTrace(str)
   }
 
-  def logOperation(batchName: String, batchId: String, name: String,
-              oldPlan: TreeNode[_], newPlan: TreeNode[_]): Unit = {
-    val data = ("rType" -> "opt") ~
+  def logAction(batchName: String, batchId: String, name: String,
+                oldPlan: TreeNode[_], newPlan: TreeNode[_]): Unit = {
+    val data = ("rType" -> ACTION) ~
+      ("type" -> TYPE_ACTION) ~
       ("name" -> name) ~
       ("batchName" -> batchName) ~
       ("batchId" -> batchId) ~
@@ -61,7 +91,7 @@ object RecordLogger extends Logging {
   def logRule(batchName: String, batchId: String, rule: Rule[_],
               oldPlan: TreeNode[_], newPlan: TreeNode[_],
               effective: Boolean, runTime: Long): Unit = {
-    var data = ("rType" -> "rule") ~
+    var data = ("rType" -> ACTION) ~
       ("batchName" -> batchName) ~
       ("batchId" -> batchId) ~
       ("runTime" -> runTime) ~
@@ -109,7 +139,7 @@ object RecordLogger extends Logging {
                   invokeCnt: Int,
                   rid: Int,
                   childRidSeq: Seq[Int]): Unit = {
-    var data = ("rType" -> "strategy") ~
+    var data = ("rType" -> ACTION) ~
       ("effective" -> effective) ~
       ("runTime" -> runTime) ~
       ("logicalPlan" -> logicalPlan.toJsonValue) ~
@@ -138,18 +168,22 @@ object RecordLogger extends Logging {
     map
   }
 
-  def logStrategyPruned(invokeCnt: Int, rid: Int, selectedRid: Int): Unit = {
-    val data = ("rType" -> "pruned") ~
+  def logInfoStrategyPruned(invokeCnt: Int, rid: Int, selectedRid: Int): Unit = {
+    val data = ("rType" -> INFO) ~
+      ("type" -> TYPE_PRUNED) ~
+      ("assign" -> BEFORE) ~
       ("invokeCnt" -> invokeCnt) ~
       ("rid" -> rid) ~
       ("selectedRid" -> selectedRid)
     logJson(data)
   }
 
-  def logJoinSelectionData(plan: TreeNode[_],
+  def logInfoJoinSelection(plan: TreeNode[_],
                            leftStats: Statistics, rightStats: Statistics,
                            hint: JoinHint): Unit = {
-    val data = ("rType" -> "joinSel") ~
+    val data = ("rType" -> INFO) ~
+      ("type" -> TYPE_JOIN_SEL) ~
+      ("assign" -> AFTER) ~
       ("plan" -> plan.toJsonValue) ~
       ("leftStats" -> leftStats.toJsonValue) ~
       ("rightStats" -> rightStats.toJsonValue) ~
@@ -157,13 +191,63 @@ object RecordLogger extends Logging {
     logJson(data)
   }
 
-  def logDynamicJoinSelectionData(plan: TreeNode[_],
+  def logInfoDynamicJoinSelection(plan: TreeNode[_],
                                   mapStat: MapOutputStatistics, threshold: Long): Unit = {
-    val data = ("rType" -> "dyJoinSel") ~
+    val data = ("rType" -> INFO) ~
+      ("type" -> TYPE_DY_JOIN_SEL) ~
+      ("assign" -> AFTER) ~
       ("plan" -> plan.toJsonValue) ~
       ("shuffleId" -> JInt(mapStat.shuffleId)) ~
       ("bytes" -> JArray(mapStat.bytesByPartitionId.toList.map(JLong(_)))) ~
       ("threshold" -> threshold)
     logJson(data)
+  }
+
+  def logInfoPhase(phaseFlag: String, phaseName: String): Unit = {
+    val data = ("rType" -> INFO) ~
+      ("type" -> TYPE_PHASE) ~
+      ("assign" -> (if (phaseFlag == PHASE_START) AFTER else BEFORE)) ~
+      ("phaseName" -> phaseName) ~
+      ("phaseFlag" -> phaseFlag)
+    logJson(data)
+  }
+
+  def logAQEStart(logicalPlan: TreeNode[_], physicalPlan: TreeNode[_]): Unit = {
+    val data = ("rType" -> INFO) ~
+      ("type" -> TYPE_AQE_START) ~
+      ("assign" -> AFTER) ~
+      ("logicalPlan" -> logicalPlan.toJsonValue) ~
+      ("physicalPlan" -> physicalPlan.toJsonValue)
+    logJson(data)
+  }
+
+  def logFinalPlan(logicalPlan: TreeNode[_], physicalPlan: TreeNode[_]): Unit = {
+    val data = ("rType" -> INFO) ~
+      ("type" -> TYPE_AQE_END) ~
+      ("assign" -> BEFORE) ~
+      ("logicalPlan" -> logicalPlan.toJsonValue) ~
+      ("physicalPlan" -> physicalPlan.toJsonValue)
+    logJson(data)
+  }
+
+  def logInfoLabel(label: String, assign: String): Unit = {
+    val data = ("rType" -> INFO) ~
+      ("type" -> TYPE_LABEL) ~
+      ("assign" -> assign) ~
+      ("label" -> label)
+    logJson(data)
+  }
+
+  def logInfoNewStages(stages: Seq[TreeNode[_]]): Unit = {
+    val data = ("rType" -> INFO) ~
+      ("type" -> TYPE_LABEL) ~
+      ("assign" -> BEFORE) ~
+      ("stages" -> stages.map(_.toJsonValue))
+    logJson(data)
+  }
+
+  def logTemp(str: String): Unit = {
+    val str2 = RecordLogger.PREFIX_TAMP + " " + str
+    logTrace(str2)
   }
 }

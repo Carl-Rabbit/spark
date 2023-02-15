@@ -84,16 +84,20 @@ case class Statistics(
         ""
       },
       s"attributeStats=${attributeStats.toString}\n",
-      s"attributeStatsSize=${attributeStats.size}\n",
+      s"attributeStatsSize=${attributeStats.size}\n"
     ).filter(_.nonEmpty).mkString(", ")
   }
 
   def toJsonValue: JValue = {
     val sizeInBytes2 = Utils.bytesToString(sizeInBytes)
-    val rowCount2 = BigDecimal(rowCount.get,
-      new MathContext(3, RoundingMode.HALF_UP)).toString()
+    val rowCount2 = if (rowCount.isDefined) {
+      // Show row count in scientific notation.
+      BigDecimal(rowCount.get, new MathContext(3, RoundingMode.HALF_UP)).toString()
+    } else {
+      ""
+    }
     val data = ("sizeInBytes" -> JString(sizeInBytes2)) ~
-      ("rowCount" -> JString(rowCount2))
+      ("rowCount" -> JString(rowCount2)) ~
       ("attributes" -> attributeStats.values.map(_.toJsonValue))
     data
   }
@@ -163,13 +167,14 @@ case class ColumnStat(
 
   // >>>>>>>>>> qotrace start
   def toJsonValue: JValue = {
-    ("distinctCount" -> option2jvalue(distinctCount)) ~
+    val data = ("distinctCount" -> option2jvalue(distinctCount)) ~
       ("min" -> (if (min.isDefined) JString(min.get.toString) else JNull)) ~
       ("max" -> (if (max.isDefined) JString(max.get.toString) else JNull)) ~
       ("nullCount" -> option2jvalue(nullCount)) ~
       ("avgLen" -> option2jvalue(avgLen)) ~
       ("maxLen" -> option2jvalue(maxLen)) ~
-      ("histogram" -> (if (histogram.isDefined) true else false))
+      ("histogram" -> (if (histogram.isDefined) histogram.get.toJsonValue else JNull))
+    data
   }
   // <<<<<<<<<< qotrace end
 }
@@ -197,6 +202,14 @@ case class Histogram(height: Double, bins: Array[HistogramBin]) {
     result = 31 * result + java.util.Arrays.hashCode(bins.asInstanceOf[Array[AnyRef]])
     result
   }
+
+  // >>>>>>>>>> qotrace start
+  def toJsonValue: JValue = {
+    val data = ("hight" -> JDouble(height)) ~
+      ("bins" -> bins.toList.map(_.toJsonValue))
+    data
+  }
+  // <<<<<<<<<< qotrace end
 }
 
 /**
@@ -206,7 +219,16 @@ case class Histogram(height: Double, bins: Array[HistogramBin]) {
  * @param hi higher bound of the value range in this bin
  * @param ndv approximate number of distinct values in this bin
  */
-case class HistogramBin(lo: Double, hi: Double, ndv: Long)
+case class HistogramBin(lo: Double, hi: Double, ndv: Long) {
+  // >>>>>>>>>> qotrace start
+  def toJsonValue: JValue = {
+    val data = ("lo" -> JDouble(lo)) ~
+      ("hi" -> JDouble(hi)) ~
+      ("ndv" -> JLong(ndv))
+    data
+  }
+  // <<<<<<<<<< qotrace end
+}
 
 object HistogramSerializer {
   /**

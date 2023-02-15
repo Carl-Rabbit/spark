@@ -244,7 +244,14 @@ case class AdaptiveSparkPlanExec(
       // Use inputPlan logicalLink here in case some top level physical nodes may be removed
       // during `initialPlan`
       var currentLogicalPlan = inputPlan.logicalLink.get
+      // >>>>>>>>>> qotrace start
+      RecordLogger.logAQEStart(currentLogicalPlan, currentPhysicalPlan)
+      RecordLogger.logInfoLabel("Create query stages", RecordLogger.AFTER)
+      // <<<<<<<<<< qotrace end
       var result = createQueryStages(currentPhysicalPlan)
+      // >>>>>>>>>> qotrace start
+      RecordLogger.logInfoNewStages(result.newStages)
+      // <<<<<<<<<< qotrace end
       val events = new LinkedBlockingQueue[StageMaterializationEvent]()
       val errors = new mutable.ArrayBuffer[Throwable]()
       var stagesToReplace = Seq.empty[QueryStageExec]
@@ -325,12 +332,18 @@ case class AdaptiveSparkPlanExec(
           stagesToReplace = Seq.empty[QueryStageExec]
         } else {
           // >>>>>>>>>> qotrace start
-          RecordLogger.logOperation("AQE Replanning Cancel", UUID.randomUUID().toString,
+          RecordLogger.logAction("AQE Replanning Cancel", UUID.randomUUID().toString,
             "UndoReplanning", newPhysicalPlan, currentLogicalPlan)
           // <<<<<<<<<< qotrace end
         }
+        // >>>>>>>>>> qotrace start
+        RecordLogger.logInfoLabel("Create query stages", RecordLogger.AFTER)
+        // <<<<<<<<<< qotrace end
         // Now that some stages have finished, we can try creating new stages.
         result = createQueryStages(currentPhysicalPlan)
+        // >>>>>>>>>> qotrace start
+        RecordLogger.logInfoNewStages(result.newStages)
+        // <<<<<<<<<< qotrace end
       }
 
       // Run the final plan when there's no more unfinished stages.
@@ -340,6 +353,9 @@ case class AdaptiveSparkPlanExec(
         Some((planChangeLogger, "AQE Post Stage Creation")))
       isFinalPlan = true
       executionId.foreach(onUpdatePlan(_, Seq(currentPhysicalPlan)))
+      // >>>>>>>>>> qotrace start
+      RecordLogger.logFinalPlan(currentLogicalPlan, currentPhysicalPlan)
+      // <<<<<<<<<< qotrace end
       currentPhysicalPlan
     }
   }
@@ -649,11 +665,8 @@ case class AdaptiveSparkPlanExec(
         }
 
         // >>>>>>>>>> qotrace start
-        RecordLogger.logOperation(
-          "AQE Preparation",
-          UUID.randomUUID().toString,
-          "ReplaceWithLogicalQueryStage",
-          logicalPlan, newLogicalPlan)
+        RecordLogger.logAction("AQE Process Logical Query Stage", UUID.randomUUID().toString,
+          "ReplaceWithLogicalQueryStage", logicalPlan, newLogicalPlan)
         // <<<<<<<<<< qotrace end
 
         logicalPlan = newLogicalPlan
@@ -671,7 +684,8 @@ case class AdaptiveSparkPlanExec(
     val optimized = optimizer.execute(logicalPlan)
     // >>>>>>>>>> qotrace start
     val optimizedWithReturn = ReturnAnswer(optimized)
-    RecordLogger.logOperation("AQE Preparation", UUID.randomUUID().toString, "InsertReturnAnswer",
+    RecordLogger.logAction("AQE Replanning Preparation", UUID.randomUUID().toString,
+      "InsertReturnAnswer",
       optimized, optimizedWithReturn)
     val sparkPlan = context.session.sessionState.planner.plan(optimizedWithReturn).next()
     // val sparkPlan = context.session.sessionState.planner.plan(ReturnAnswer(optimized)).next()
@@ -696,9 +710,8 @@ case class AdaptiveSparkPlanExec(
 
     // >>>>>>>>>> qotrace start
     if (finalPlan != newPlan) {
-      RecordLogger.logOperation("AQE Replanning", UUID.randomUUID().toString,
-        "FixDuplicatedBroadcastNode",
-        newPlan, finalPlan)
+      RecordLogger.logAction("AQE Replanning", UUID.randomUUID().toString,
+        "FixDuplicatedBroadcastNode", newPlan, finalPlan)
     }
     // <<<<<<<<<< qotrace end
 
