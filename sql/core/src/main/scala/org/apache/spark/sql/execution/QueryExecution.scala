@@ -20,7 +20,9 @@ package org.apache.spark.sql.execution
 import java.io.{BufferedWriter, OutputStreamWriter}
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
+
 import org.apache.hadoop.fs.Path
+
 import org.apache.spark.SparkException
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
@@ -499,7 +501,14 @@ object QueryExecution {
       plan: LogicalPlan): SparkPlan = {
     // TODO: We use next(), i.e. take the first plan returned by the planner, here for now,
     //       but we will implement to choose the best plan.
-    planner.plan(ReturnAnswer(plan)).next()
+    // >>>>>>>>>> qotrace start
+    val planWithReturn = ReturnAnswer(plan)
+    RecordLogger.logAction("Planning", UUID.randomUUID().toString,
+      "InsertReturnAnswer",
+      plan, planWithReturn)
+    planner.plan(planWithReturn).next()
+    // <<<<<<<<<< qotrace end
+    // planner.plan(ReturnAnswer(plan)).next()
   }
 
   /**

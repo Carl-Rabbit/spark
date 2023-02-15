@@ -39,6 +39,7 @@ object RecordLogger extends Logging {
   val ANALYSIS = "analysis"
   val OPTIMIZATION = "optimization"
   val PLANNING = "planning"
+  val AQE = "aqe"
 
   // phase flag
   val PHASE_START = "start"
@@ -62,6 +63,7 @@ object RecordLogger extends Logging {
   val TYPE_AQE_START = "aqe start"
   val TYPE_AQE_END = "aqe end"
   val TYPE_LABEL = "label"
+  val TYPE_STAGE = "stage"
 
   private val RULE_INFO_PATTERN = Pattern
     .compile("org\\.apache\\.spark\\.sql\\.catalyst\\.([^.\\s]+)\\.([^\\s]+)")
@@ -240,7 +242,7 @@ object RecordLogger extends Logging {
 
   def logInfoNewStages(stages: Seq[TreeNode[_]]): Unit = {
     val data = ("rType" -> INFO) ~
-      ("type" -> TYPE_LABEL) ~
+      ("type" -> TYPE_STAGE) ~
       ("assign" -> BEFORE) ~
       ("stages" -> stages.map(_.toJsonValue))
     logJson(data)

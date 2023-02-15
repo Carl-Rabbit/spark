@@ -245,6 +245,7 @@ case class AdaptiveSparkPlanExec(
       // during `initialPlan`
       var currentLogicalPlan = inputPlan.logicalLink.get
       // >>>>>>>>>> qotrace start
+      RecordLogger.logInfoPhase(RecordLogger.PHASE_START, RecordLogger.AQE)
       RecordLogger.logAQEStart(currentLogicalPlan, currentPhysicalPlan)
       RecordLogger.logInfoLabel("Create query stages", RecordLogger.AFTER)
       // <<<<<<<<<< qotrace end
@@ -319,6 +320,9 @@ case class AdaptiveSparkPlanExec(
         // the current physical plan. Once a new plan is adopted and both logical and physical
         // plans are updated, we can clear the query stage list because at this point the two plans
         // are semantically and physically in sync again.
+        // >>>>>>>>>> qotrace start
+        RecordLogger.logInfoLabel(f"AQE Re-optimizing", RecordLogger.AFTER)
+        // <<<<<<<<<< qotrace end
         val logicalPlan = replaceWithQueryStagesInLogicalPlan(currentLogicalPlan, stagesToReplace)
         val (newPhysicalPlan, newLogicalPlan) = reOptimize(logicalPlan)
         val origCost = costEvaluator.evaluateCost(currentPhysicalPlan)
@@ -330,10 +334,22 @@ case class AdaptiveSparkPlanExec(
           currentPhysicalPlan = newPhysicalPlan
           currentLogicalPlan = newLogicalPlan
           stagesToReplace = Seq.empty[QueryStageExec]
+          // >>>>>>>>>> qotrace start
+          RecordLogger.logInfoLabel(f"Better plan obtained. " +
+            f"newCost=$newCost origCost=$origCost", RecordLogger.BEFORE)
+          // <<<<<<<<<< qotrace end
         } else {
           // >>>>>>>>>> qotrace start
-          RecordLogger.logAction("AQE Replanning Cancel", UUID.randomUUID().toString,
-            "UndoReplanning", newPhysicalPlan, currentLogicalPlan)
+          if (currentPhysicalPlan == newPhysicalPlan) {
+            RecordLogger.logInfoLabel(f"Same plan obtained. " +
+              f"newCost=$newCost origCost=$origCost", RecordLogger.BEFORE)
+          } else {
+            // newCost > origCost
+            RecordLogger.logInfoLabel(f"Worse plan obtained. " +
+              f"newCost=$newCost origCost=$origCost", RecordLogger.BEFORE)
+            RecordLogger.logAction("AQE Replanning Cancel", UUID.randomUUID().toString,
+              "UndoReplanning", newPhysicalPlan, currentPhysicalPlan)
+          }
           // <<<<<<<<<< qotrace end
         }
         // >>>>>>>>>> qotrace start
@@ -506,6 +522,7 @@ case class AdaptiveSparkPlanExec(
       // First have a quick check in the `stageCache` without having to traverse down the node.
       context.stageCache.get(e.canonicalized) match {
         case Some(existingStage) if conf.exchangeReuseEnabled =>
+          RecordLogger.logInfoLabel("Stage cache hit", RecordLogger.AFTER)
           val stage = reuseQueryStage(existingStage, e)
           val isMaterialized = stage.isMaterialized
           CreateStageResult(
