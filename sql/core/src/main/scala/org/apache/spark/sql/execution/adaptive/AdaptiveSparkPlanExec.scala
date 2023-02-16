@@ -251,6 +251,8 @@ case class AdaptiveSparkPlanExec(
       // <<<<<<<<<< qotrace end
       var result = createQueryStages(currentPhysicalPlan)
       // >>>>>>>>>> qotrace start
+      RecordLogger.logAction("Create Query Stages", UUID.randomUUID().toString,
+        "CreateQueryStages", result.newPlan, result.newPlan)
       RecordLogger.logInfoNewStages(result.newStages)
       // <<<<<<<<<< qotrace end
       val events = new LinkedBlockingQueue[StageMaterializationEvent]()
@@ -358,6 +360,8 @@ case class AdaptiveSparkPlanExec(
         // Now that some stages have finished, we can try creating new stages.
         result = createQueryStages(currentPhysicalPlan)
         // >>>>>>>>>> qotrace start
+        RecordLogger.logAction("Create Query Stages", UUID.randomUUID().toString,
+          "CreateQueryStages", result.newPlan, result.newPlan)
         RecordLogger.logInfoNewStages(result.newStages)
         // <<<<<<<<<< qotrace end
       }
