@@ -247,7 +247,8 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
 
         def createSortMergeJoin() = {
           // >>>>>>>>>> qotrace start
-          RecordLogger.logInfoLabel(f"JoinSelection: equi-join, createSortMergeJoin",
+          RecordLogger.logInfoLabel(f"JoinSelection: equi-join, createSortMergeJoin, " +
+            f"RowOrdering.isOrderable(leftKeys)=${RowOrdering.isOrderable(leftKeys)}",
             RecordLogger.AFTER)
           // <<<<<<<<<< qotrace end
           if (RowOrdering.isOrderable(leftKeys)) {
