@@ -213,12 +213,13 @@ abstract class RuleExecutor[TreeType <: TreeNode[_]] extends Logging {
       var lastPlan = curPlan
       var continue = true
 
-      // >>>>>>>>>> qotrace start
-      val batchId = UUID.randomUUID.toString
-      // <<<<<<<<<< qotrace end
-
       // Run until fix point (or the max number of iterations as specified in the strategy.
       while (continue) {
+
+        // >>>>>>>>>> qotrace start
+        val batchId = UUID.randomUUID.toString
+        // <<<<<<<<<< qotrace end
+
         curPlan = batch.rules.foldLeft(curPlan) {
           case (plan, rule) =>
             val startTime = System.nanoTime()
