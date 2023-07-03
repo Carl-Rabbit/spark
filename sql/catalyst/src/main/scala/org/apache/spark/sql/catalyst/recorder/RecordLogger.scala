@@ -17,6 +17,7 @@
 
 package org.apache.spark.sql.catalyst.recorder
 
+import java.time.LocalDateTime
 import java.util.regex.Pattern
 
 import org.json4s._
@@ -86,7 +87,8 @@ object RecordLogger extends Logging {
       ("batchId" -> batchId) ~
       ("effective" -> true) ~
       ("oldPlan" -> oldPlan.toJsonValue) ~
-      ("newPlan" -> newPlan.toJsonValue)
+      ("newPlan" -> newPlan.toJsonValue) ~
+      ("timestamp" -> LocalDateTime.now().toString)
     logJson(data)
   }
 
@@ -98,7 +100,8 @@ object RecordLogger extends Logging {
       ("batchId" -> batchId) ~
       ("runTime" -> runTime) ~
       ("effective" -> effective) ~
-      ("oldPlan" -> oldPlan.toJsonValue)
+      ("oldPlan" -> oldPlan.toJsonValue) ~
+      ("timestamp" -> LocalDateTime.now().toString)
     if (effective) {
       data = data ~ ("newPlan" -> newPlan.toJsonValue)
     }
@@ -148,7 +151,8 @@ object RecordLogger extends Logging {
       ("physicalPlans" -> physicalPlans.map(_.toJsonValue)) ~
       ("invokeCnt" -> invokeCnt) ~
       ("rid" -> rid) ~
-      ("childRidSeq" -> childRidSeq)
+      ("childRidSeq" -> childRidSeq) ~
+      ("timestamp" -> LocalDateTime.now().toString)
     extractStrategyInfo(strategy).iterator.foreach {
       case (k, v) => data = data ~ (k -> v)
     }
@@ -176,7 +180,8 @@ object RecordLogger extends Logging {
       ("assign" -> BEFORE) ~
       ("invokeCnt" -> invokeCnt) ~
       ("rid" -> rid) ~
-      ("selectedRid" -> selectedRid)
+      ("selectedRid" -> selectedRid) ~
+      ("timestamp" -> LocalDateTime.now().toString)
     logJson(data)
   }
 
@@ -189,7 +194,8 @@ object RecordLogger extends Logging {
       ("plan" -> plan.toJsonValue) ~
       ("leftStats" -> leftStats.toJsonValue) ~
       ("rightStats" -> rightStats.toJsonValue) ~
-      ("hint" -> JString(hint.toString))
+      ("hint" -> JString(hint.toString)) ~
+      ("timestamp" -> LocalDateTime.now().toString)
     logJson(data)
   }
 
@@ -201,7 +207,8 @@ object RecordLogger extends Logging {
       ("plan" -> plan.toJsonValue) ~
       ("shuffleId" -> JInt(mapStat.shuffleId)) ~
       ("bytes" -> JArray(mapStat.bytesByPartitionId.toList.map(JLong(_)))) ~
-      ("threshold" -> threshold)
+      ("threshold" -> threshold) ~
+      ("timestamp" -> LocalDateTime.now().toString)
     logJson(data)
   }
 
@@ -210,7 +217,8 @@ object RecordLogger extends Logging {
       ("type" -> TYPE_PHASE) ~
       ("assign" -> (if (phaseFlag == PHASE_START) AFTER else BEFORE)) ~
       ("phaseName" -> phaseName) ~
-      ("phaseFlag" -> phaseFlag)
+      ("phaseFlag" -> phaseFlag) ~
+      ("timestamp" -> LocalDateTime.now().toString)
     logJson(data)
   }
 
@@ -219,7 +227,8 @@ object RecordLogger extends Logging {
       ("type" -> TYPE_AQE_START) ~
       ("assign" -> AFTER) ~
       ("logicalPlan" -> logicalPlan.toJsonValue) ~
-      ("physicalPlan" -> physicalPlan.toJsonValue)
+      ("physicalPlan" -> physicalPlan.toJsonValue) ~
+      ("timestamp" -> LocalDateTime.now().toString)
     logJson(data)
   }
 
@@ -228,7 +237,8 @@ object RecordLogger extends Logging {
       ("type" -> TYPE_AQE_END) ~
       ("assign" -> BEFORE) ~
       ("logicalPlan" -> logicalPlan.toJsonValue) ~
-      ("physicalPlan" -> physicalPlan.toJsonValue)
+      ("physicalPlan" -> physicalPlan.toJsonValue) ~
+      ("timestamp" -> LocalDateTime.now().toString)
     logJson(data)
   }
 
@@ -236,7 +246,8 @@ object RecordLogger extends Logging {
     val data = ("rType" -> INFO) ~
       ("type" -> TYPE_LABEL) ~
       ("assign" -> assign) ~
-      ("label" -> label)
+      ("label" -> label) ~
+      ("timestamp" -> LocalDateTime.now().toString)
     logJson(data)
   }
 
@@ -244,7 +255,8 @@ object RecordLogger extends Logging {
     val data = ("rType" -> INFO) ~
       ("type" -> TYPE_STAGE) ~
       ("assign" -> BEFORE) ~
-      ("stages" -> stages.map(_.toJsonValue))
+      ("stages" -> stages.map(_.toJsonValue)) ~
+      ("timestamp" -> LocalDateTime.now().toString)
     logJson(data)
   }
 
