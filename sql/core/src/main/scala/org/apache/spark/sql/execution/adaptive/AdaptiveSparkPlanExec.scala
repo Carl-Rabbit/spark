@@ -18,12 +18,12 @@
 package org.apache.spark.sql.execution.adaptive
 
 import java.util
-import java.util.UUID
 import java.util.concurrent.LinkedBlockingQueue
 
 import scala.collection.JavaConverters._
 import scala.collection.concurrent.TrieMap
 import scala.collection.mutable
+import scala.collection.mutable.ListBuffer
 import scala.concurrent.ExecutionContext
 import scala.util.control.NonFatal
 
@@ -34,7 +34,7 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.logical.{LogicalPlan, ReturnAnswer}
 import org.apache.spark.sql.catalyst.plans.physical.{Distribution, UnspecifiedDistribution}
-import org.apache.spark.sql.catalyst.recorder.RecordLogger
+import org.apache.spark.sql.catalyst.recorder.{PhaseName, ProcFlag, ProcType, RecordLogger}
 import org.apache.spark.sql.catalyst.rules.{PlanChangeLogger, Rule}
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.errors.QueryExecutionErrors
@@ -151,12 +151,9 @@ case class AdaptiveSparkPlanExec(
   )
 
   private def optimizeQueryStage(plan: SparkPlan, isFinalStage: Boolean): SparkPlan = {
-    // >>>>>>>>>> qotrace start
-    val batchId = UUID.randomUUID.toString
-    // <<<<<<<<<< qotrace end
     val optimized = queryStageOptimizerRules.foldLeft(plan) { case (latestPlan, rule) =>
       // <<<<<<<<<< qotrace start
-      val startTime = System.nanoTime()
+      RecordLogger.logPlan(latestPlan, rule.ruleName, ProcType.rule, ProcFlag.start)
       // >>>>>>>>>> qotrace end
       val applied = rule.apply(latestPlan)
       val result = rule match {
@@ -179,10 +176,9 @@ case class AdaptiveSparkPlanExec(
         case _ => applied
       }
       // >>>>>>>>>> qotrace start
-      val runTime = System.nanoTime() - startTime
       val effective = !result.fastEquals(latestPlan)
-      RecordLogger.logRule("AQE Query Stage Optimization",
-        batchId, rule, latestPlan, result, effective, runTime)
+      RecordLogger.logInfoEffective(effective)
+      RecordLogger.logPlan(result, rule.ruleName, ProcType.rule, ProcFlag.end)
       // <<<<<<<<<< qotrace end
       planChangeLogger.logRule(rule.ruleName, latestPlan, result)
       result
@@ -245,15 +241,16 @@ case class AdaptiveSparkPlanExec(
       // during `initialPlan`
       var currentLogicalPlan = inputPlan.logicalLink.get
       // >>>>>>>>>> qotrace start
-      RecordLogger.logInfoPhase(RecordLogger.PHASE_START, RecordLogger.AQE)
-      RecordLogger.logAQEStart(currentLogicalPlan, currentPhysicalPlan)
-      RecordLogger.logInfoLabel("Create query stages", RecordLogger.AFTER)
+//      var lastLogicalPlan = inputPlan.logicalLink.get
+      RecordLogger.logPlan(currentPhysicalPlan, PhaseName.AQE.toString,
+        ProcType.phase, ProcFlag.start)
+      RecordLogger.logPlan(currentPhysicalPlan, "Create Query Stages",
+        ProcType.other, ProcFlag.start)
       // <<<<<<<<<< qotrace end
       var result = createQueryStages(currentPhysicalPlan)
       // >>>>>>>>>> qotrace start
-      RecordLogger.logAction("Create Query Stages", UUID.randomUUID().toString,
-        "CreateQueryStages", result.newPlan, result.newPlan)
-      RecordLogger.logInfoNewStages(result.newStages)
+      RecordLogger.logInfoStageSubmit(result.newStages)
+      RecordLogger.logPlan(result.newPlan, "Create Query Stages", ProcType.other, ProcFlag.end)
       // <<<<<<<<<< qotrace end
       val events = new LinkedBlockingQueue[StageMaterializationEvent]()
       val errors = new mutable.ArrayBuffer[Throwable]()
@@ -293,14 +290,25 @@ case class AdaptiveSparkPlanExec(
           }
         }
 
+        // >>>>>>>>>> qotrace start
+        RecordLogger.logPlan(currentPhysicalPlan, PhaseName.AQE.toString,
+          ProcType.phase, ProcFlag.end)
+        // <<<<<<<<<< qotrace end
+
         // Wait on the next completed stage, which indicates new stats are available and probably
         // new stages can be created. There might be other stages that finish at around the same
         // time, so we process those stages too in order to reduce re-planning.
         val nextMsg = events.take()
         val rem = new util.ArrayList[StageMaterializationEvent]()
+        // >>>>>>>>>> qotrace start
+        val completedStages = ListBuffer[QueryStageExec]()
+        // <<<<<<<<<< qotrace end
         events.drainTo(rem)
         (Seq(nextMsg) ++ rem.asScala).foreach {
           case StageSuccess(stage, res) =>
+            // >>>>>>>>>> qotrace start
+            completedStages.append(stage)
+            // <<<<<<<<<< qotrace end
             stage.resultOption.set(Some(res))
           case StageFailure(stage, ex) =>
             errors.append(ex)
@@ -310,6 +318,12 @@ case class AdaptiveSparkPlanExec(
         if (errors.nonEmpty) {
           cleanUpAndThrowException(errors.toSeq, None)
         }
+
+        // >>>>>>>>>> qotrace start
+        RecordLogger.logPlan(currentPhysicalPlan, PhaseName.AQE.toString,
+          ProcType.phase, ProcFlag.start)
+        RecordLogger.logInfoStageComplete(completedStages)
+        // <<<<<<<<<< qotrace end
 
         // Try re-optimizing and re-planning. Adopt the new plan if its cost is equal to or less
         // than that of the current plan; otherwise keep the current physical plan together with
@@ -323,10 +337,30 @@ case class AdaptiveSparkPlanExec(
         // plans are updated, we can clear the query stage list because at this point the two plans
         // are semantically and physically in sync again.
         // >>>>>>>>>> qotrace start
-        RecordLogger.logInfoLabel(f"AQE Re-optimizing", RecordLogger.AFTER)
+//        if (lastLogicalPlan != currentLogicalPlan) {
+//          RecordLogger.logPlan(lastLogicalPlan, "Update Logical Plan",
+//            ProcType.other, ProcFlag.start)
+//          RecordLogger.logPlan(currentLogicalPlan, "Update Logical Plan",
+//            ProcType.other, ProcFlag.end)
+//          lastLogicalPlan = currentLogicalPlan
+//        }
+        RecordLogger.logPlan(currentPhysicalPlan, "AQE Re-optimizing Preparation",
+          ProcType.other, ProcFlag.start)
         // <<<<<<<<<< qotrace end
         val logicalPlan = replaceWithQueryStagesInLogicalPlan(currentLogicalPlan, stagesToReplace)
+        // >>>>>>>>>> qotrace start
+        RecordLogger.logPlan(logicalPlan, "AQE Re-optimizing Preparation",
+          ProcType.other, ProcFlag.end)
+        RecordLogger.logPlan(logicalPlan, "AQE Re-optimizing",
+          ProcType.other, ProcFlag.start)
+        // <<<<<<<<<< qotrace end
         val (newPhysicalPlan, newLogicalPlan) = reOptimize(logicalPlan)
+        // >>>>>>>>>> qotrace start
+        RecordLogger.logPlan(newPhysicalPlan, "AQE Re-optimizing",
+          ProcType.other, ProcFlag.end)
+        RecordLogger.logPlan(newPhysicalPlan, "AQE Rollback",
+          ProcType.other, ProcFlag.start)
+        // <<<<<<<<<< qotrace end
         val origCost = costEvaluator.evaluateCost(currentPhysicalPlan)
         val newCost = costEvaluator.evaluateCost(newPhysicalPlan)
         if (newCost < origCost ||
@@ -337,35 +371,38 @@ case class AdaptiveSparkPlanExec(
           currentLogicalPlan = newLogicalPlan
           stagesToReplace = Seq.empty[QueryStageExec]
           // >>>>>>>>>> qotrace start
-          RecordLogger.logInfoLabel(f"Better plan obtained. " +
-            f"newCost=$newCost origCost=$origCost", RecordLogger.BEFORE)
+          RecordLogger.logInfoLabel(f"Better plan obtained, don't rollback. " +
+            f"newCost=$newCost origCost=$origCost")
           // <<<<<<<<<< qotrace end
         } else {
           // >>>>>>>>>> qotrace start
+          RecordLogger.logInfoEffective(false)
           if (currentPhysicalPlan == newPhysicalPlan) {
-            RecordLogger.logInfoLabel(f"Same plan obtained. " +
-              f"newCost=$newCost origCost=$origCost", RecordLogger.BEFORE)
+            RecordLogger.logInfoLabel(f"Same plan obtained.")
           } else {
             // newCost > origCost
-            RecordLogger.logInfoLabel(f"Worse plan obtained. " +
-              f"newCost=$newCost origCost=$origCost", RecordLogger.BEFORE)
-            RecordLogger.logAction("AQE Replanning Cancel", UUID.randomUUID().toString,
-              "UndoReplanning", newPhysicalPlan, currentPhysicalPlan)
+            RecordLogger.logInfoLabel(f"Worse plan obtained, rollback. " +
+              f"newCost=$newCost origCost=$origCost")
           }
           // <<<<<<<<<< qotrace end
         }
         // >>>>>>>>>> qotrace start
-        RecordLogger.logInfoLabel("Create query stages", RecordLogger.AFTER)
+        RecordLogger.logPlan(currentPhysicalPlan, "AQE Rollback",
+          ProcType.other, ProcFlag.end)
+        RecordLogger.logPlan(currentPhysicalPlan, "Create Query Stages",
+          ProcType.other, ProcFlag.start)
         // <<<<<<<<<< qotrace end
         // Now that some stages have finished, we can try creating new stages.
         result = createQueryStages(currentPhysicalPlan)
         // >>>>>>>>>> qotrace start
-        RecordLogger.logAction("Create Query Stages", UUID.randomUUID().toString,
-          "CreateQueryStages", result.newPlan, result.newPlan)
-        RecordLogger.logInfoNewStages(result.newStages)
+        RecordLogger.logInfoStageSubmit(result.newStages)
+        RecordLogger.logPlan(result.newPlan, "Create Query Stages", ProcType.other, ProcFlag.end)
         // <<<<<<<<<< qotrace end
       }
-
+      // >>>>>>>>>> qotrace start
+      RecordLogger.logPlan(result.newPlan, "AQE Post Stage Creation",
+        ProcType.other, ProcFlag.start)
+      // <<<<<<<<<< qotrace end
       // Run the final plan when there's no more unfinished stages.
       currentPhysicalPlan = applyPhysicalRules(
         optimizeQueryStage(result.newPlan, isFinalStage = true),
@@ -374,7 +411,12 @@ case class AdaptiveSparkPlanExec(
       isFinalPlan = true
       executionId.foreach(onUpdatePlan(_, Seq(currentPhysicalPlan)))
       // >>>>>>>>>> qotrace start
-      RecordLogger.logFinalPlan(currentLogicalPlan, currentPhysicalPlan)
+      RecordLogger.logPlan(currentPhysicalPlan, "AQE Post Stage Creation",
+        ProcType.other, ProcFlag.end, labels = Seq("final plan"))
+
+      RecordLogger.logPlan(currentPhysicalPlan, PhaseName.AQE.toString,
+        ProcType.phase, ProcFlag.end)
+//      RecordLogger.logInfoStageComplete(completedStages)
       // <<<<<<<<<< qotrace end
       currentPhysicalPlan
     }
@@ -526,7 +568,9 @@ case class AdaptiveSparkPlanExec(
       // First have a quick check in the `stageCache` without having to traverse down the node.
       context.stageCache.get(e.canonicalized) match {
         case Some(existingStage) if conf.exchangeReuseEnabled =>
-          RecordLogger.logInfoLabel("Stage cache hit", RecordLogger.AFTER)
+          // >>>>>>>>>> qotrace start
+          RecordLogger.logInfoLabel("Stage cache hit")
+          // <<<<<<<<<< qotrace end
           val stage = reuseQueryStage(existingStage, e)
           val isMaterialized = stage.isMaterialized
           CreateStageResult(
@@ -535,11 +579,28 @@ case class AdaptiveSparkPlanExec(
             newStages = if (isMaterialized) Seq.empty else Seq(stage))
 
         case _ =>
+          // >>>>>>>>>> qotrace start
+          val isPartial = !currentPhysicalPlan.equals(e)
+//          RecordLogger.logPlan(e.child, "Create New Stages Recursively",
+//            ProcType.other, ProcFlag.start, isPartial)
+          // <<<<<<<<<< qotrace end
           val result = createQueryStages(e.child)
           val newPlan = e.withNewChildren(Seq(result.newPlan)).asInstanceOf[Exchange]
+          // >>>>>>>>>> qotrace start
+//          RecordLogger.logPlan(result.newPlan, "Creating New Stages Recursively",
+//            ProcType.other, ProcFlag.end, isPartial)
+          // <<<<<<<<<< qotrace end
           // Create a query stage only when all the child query stages are ready.
           if (result.allChildStagesMaterialized) {
+            // >>>>>>>>>> qotrace start
+            RecordLogger.logPlan(newPlan, "Create New Stage",
+              ProcType.other, ProcFlag.start, isPartial)
+            // <<<<<<<<<< qotrace end
             var newStage = newQueryStage(newPlan)
+            // >>>>>>>>>> qotrace start
+            RecordLogger.logPlan(newStage, "Create New Stage",
+              ProcType.other, ProcFlag.end, isPartial)
+            // <<<<<<<<<< qotrace end
             if (conf.exchangeReuseEnabled) {
               // Check the `stageCache` again for reuse. If a match is found, ditch the new stage
               // and reuse the existing stage found in the `stageCache`, otherwise update the
@@ -547,7 +608,15 @@ case class AdaptiveSparkPlanExec(
               val queryStage = context.stageCache.getOrElseUpdate(
                 newStage.plan.canonicalized, newStage)
               if (queryStage.ne(newStage)) {
+                // >>>>>>>>>> qotrace start
+                RecordLogger.logPlan(newStage, "Reuse Query Stage",
+                  ProcType.other, ProcFlag.start, isPartial)
+                // <<<<<<<<<< qotrace end
                 newStage = reuseQueryStage(queryStage, e)
+                // >>>>>>>>>> qotrace start
+                RecordLogger.logPlan(newStage, "Reuse Query Stage",
+                  ProcType.other, ProcFlag.end, isPartial)
+                // <<<<<<<<<< qotrace end
               }
             }
             val isMaterialized = newStage.isMaterialized
@@ -578,28 +647,77 @@ case class AdaptiveSparkPlanExec(
   }
 
   private def newQueryStage(e: Exchange): QueryStageExec = {
+    // >>>>>>>>>> qotrace start
+    val isPartial = !e.equals(currentPhysicalPlan)
+    RecordLogger.logPlan(e, "Optimize Query Stage", ProcType.other, ProcFlag.start, isPartial)
+    // <<<<<<<<<< qotrace end
     val optimizedPlan = optimizeQueryStage(e.child, isFinalStage = false)
+    // >>>>>>>>>> qotrace start
+    val optimizedPlanWhole = e.withNewChildren(Seq(optimizedPlan))
+    RecordLogger.logPlan(optimizedPlanWhole, "Optimize Query Stage",
+      ProcType.other, ProcFlag.end, isPartial)
+    // <<<<<<<<<< qotrace end
     val queryStage = e match {
       case s: ShuffleExchangeLike =>
+        // >>>>>>>>>> qotrace start
+        RecordLogger.logPlan(optimizedPlanWhole, "AQE Post Stage Creation",
+          ProcType.other, ProcFlag.start, isPartial)
+        // <<<<<<<<<< qotrace end
         val newShuffle = applyPhysicalRules(
-          s.withNewChildren(Seq(optimizedPlan)),
+          // >>>>>>>>>> qotrace start
+          // s.withNewChildren(Seq(optimizedPlan)),
+          optimizedPlanWhole,
+          // <<<<<<<<<< qotrace end
           postStageCreationRules(outputsColumnar = s.supportsColumnar),
           Some((planChangeLogger, "AQE Post Stage Creation")))
+        // >>>>>>>>>> qotrace start
+        RecordLogger.logPlan(newShuffle, "AQE Post Stage Creation",
+          ProcType.other, ProcFlag.end, isPartial)
+        // <<<<<<<<<< qotrace end
         if (!newShuffle.isInstanceOf[ShuffleExchangeLike]) {
           throw new IllegalStateException(
             "Custom columnar rules cannot transform shuffle node to something else.")
         }
-        ShuffleQueryStageExec(currentStageId, newShuffle, s.canonicalized)
+        // >>>>>>>>>> qotrace start
+        RecordLogger.logPlan(newShuffle, "Wrap With Query Stage Exec",
+          ProcType.other, ProcFlag.start, isPartial)
+        // <<<<<<<<<< qotrace end
+        val ret = ShuffleQueryStageExec(currentStageId, newShuffle, s.canonicalized)
+        // >>>>>>>>>> qotrace start
+        RecordLogger.logPlan(ret, "Wrap With Query Stage Exec",
+          ProcType.other, ProcFlag.end, isPartial)
+        // <<<<<<<<<< qotrace end
+        ret
       case b: BroadcastExchangeLike =>
+        // >>>>>>>>>> qotrace start
+        RecordLogger.logPlan(optimizedPlanWhole, "AQE Post Stage Creation",
+          ProcType.other, ProcFlag.start, isPartial)
+        // <<<<<<<<<< qotrace end
         val newBroadcast = applyPhysicalRules(
-          b.withNewChildren(Seq(optimizedPlan)),
+          // >>>>>>>>>> qotrace start
+          // b.withNewChildren(Seq(optimizedPlan)),
+          optimizedPlanWhole,
+          // <<<<<<<<<< qotrace end
           postStageCreationRules(outputsColumnar = b.supportsColumnar),
           Some((planChangeLogger, "AQE Post Stage Creation")))
+        // >>>>>>>>>> qotrace start
+        RecordLogger.logPlan(newBroadcast, "AQE Post Stage Creation",
+          ProcType.other, ProcFlag.end, isPartial)
+        // <<<<<<<<<< qotrace end
         if (!newBroadcast.isInstanceOf[BroadcastExchangeLike]) {
           throw new IllegalStateException(
             "Custom columnar rules cannot transform broadcast node to something else.")
         }
-        BroadcastQueryStageExec(currentStageId, newBroadcast, b.canonicalized)
+        // >>>>>>>>>> qotrace start
+        RecordLogger.logPlan(newBroadcast, "Wrap With Query Stage Exec",
+          ProcType.other, ProcFlag.start, isPartial)
+        // <<<<<<<<<< qotrace end
+        val ret = BroadcastQueryStageExec(currentStageId, newBroadcast, b.canonicalized)
+        // >>>>>>>>>> qotrace start
+        RecordLogger.logPlan(ret, "Wrap With Query Stage Exec",
+          ProcType.other, ProcFlag.end, isPartial)
+        // <<<<<<<<<< qotrace end
+        ret
     }
     currentStageId += 1
     setLogicalLinkForNewQueryStage(queryStage, e)
@@ -686,8 +804,10 @@ case class AdaptiveSparkPlanExec(
         }
 
         // >>>>>>>>>> qotrace start
-        RecordLogger.logAction("AQE Process Logical Query Stage", UUID.randomUUID().toString,
-          "ReplaceWithLogicalQueryStage", logicalPlan, newLogicalPlan)
+//        RecordLogger.logPlan(logicalPlan, "ReplaceWithLogicalQueryStage",
+//          ProcType.other, ProcFlag.start)
+//        RecordLogger.logPlan(newLogicalPlan, "ReplaceWithLogicalQueryStage",
+//          ProcType.other, ProcFlag.end)
         // <<<<<<<<<< qotrace end
 
         logicalPlan = newLogicalPlan
@@ -702,13 +822,19 @@ case class AdaptiveSparkPlanExec(
    */
   private def reOptimize(logicalPlan: LogicalPlan): (SparkPlan, LogicalPlan) = {
     logicalPlan.invalidateStatsCache()
+    // >>>>>>>>>> qotrace start
+    RecordLogger.logPlan(logicalPlan, "Re-optimization", ProcType.phase, ProcFlag.start)
+    // <<<<<<<<<< qotrace end
     val optimized = optimizer.execute(logicalPlan)
     // >>>>>>>>>> qotrace start
+    RecordLogger.logPlan(optimized, "Re-optimization", ProcType.phase, ProcFlag.end)
+    RecordLogger.logPlan(optimized, "InsertReturnAnswer", ProcType.other, ProcFlag.start)
     val optimizedWithReturn = ReturnAnswer(optimized)
-    RecordLogger.logAction("AQE Replanning Preparation", UUID.randomUUID().toString,
-      "InsertReturnAnswer",
-      optimized, optimizedWithReturn)
+    RecordLogger.logPlan(optimizedWithReturn, "InsertReturnAnswer", ProcType.other, ProcFlag.end)
+
+    RecordLogger.logPlan(optimizedWithReturn, "PlannerExec", ProcType.phase, ProcFlag.start)
     val sparkPlan = context.session.sessionState.planner.plan(optimizedWithReturn).next()
+    RecordLogger.logPlan(sparkPlan, "PlannerExec", ProcType.phase, ProcFlag.end)
     // val sparkPlan = context.session.sessionState.planner.plan(ReturnAnswer(optimized)).next()
     // <<<<<<<<<< qotrace end
     val newPlan = applyPhysicalRules(
@@ -723,6 +849,9 @@ case class AdaptiveSparkPlanExec(
     // node to prevent the loss of the `BroadcastExchangeExec` node in DPP subquery.
     // Here, we also need to avoid to insert the `BroadcastExchangeExec` node when the newPlan
     // is already the `BroadcastExchangeExec` plan after apply the `LogicalQueryStageStrategy` rule.
+    // >>>>>>>>>> qotrace start
+    RecordLogger.logPlan(newPlan, "FixDuplicatedBroadcastNode", ProcType.other, ProcFlag.start)
+    // <<<<<<<<<< qotrace end
     val finalPlan = currentPhysicalPlan match {
       case b: BroadcastExchangeLike
         if (!newPlan.isInstanceOf[BroadcastExchangeLike]) => b.withNewChildren(Seq(newPlan))
@@ -730,10 +859,10 @@ case class AdaptiveSparkPlanExec(
     }
 
     // >>>>>>>>>> qotrace start
-    if (finalPlan != newPlan) {
-      RecordLogger.logAction("AQE Replanning", UUID.randomUUID().toString,
-        "FixDuplicatedBroadcastNode", newPlan, finalPlan)
+    if (finalPlan.fastEquals(newPlan)) {
+      RecordLogger.logInfoEffective(false)
     }
+    RecordLogger.logPlan(finalPlan, "FixDuplicatedBroadcastNode", ProcType.other, ProcFlag.end)
     // <<<<<<<<<< qotrace end
 
     (finalPlan, optimized)
@@ -840,43 +969,53 @@ object AdaptiveSparkPlanExec {
       plan: SparkPlan,
       rules: Seq[Rule[SparkPlan]],
       loggerAndBatchName: Option[(PlanChangeLogger[SparkPlan], String)] = None): SparkPlan = {
-    // >>>>>>>>>> qotrace start
-    val batchId = UUID.randomUUID.toString
-    // <<<<<<<<<< qotrace end
     if (loggerAndBatchName.isEmpty) {
-      rules.foldLeft(plan) { case (sp, rule) =>
+      // >>>>>>>>>> qotrace start
+      RecordLogger.logPlan(plan, "Unknown Batch", ProcType.other, ProcFlag.start)
+      // <<<<<<<<<< qotrace end
+      val newPlan = rules.foldLeft(plan) { case (sp, rule) =>
         // <<<<<<<<<< qotrace start
-        val startTime = System.nanoTime()
+        RecordLogger.logPlan(sp, rule.ruleName, ProcType.rule, ProcFlag.start)
         // >>>>>>>>>> qotrace end
 
         val result = rule.apply(sp)
 
         // >>>>>>>>>> qotrace start
-        val runTime = System.nanoTime() - startTime
         val effective = !result.fastEquals(sp)
-        RecordLogger.logRule("Unknown batch", batchId, rule, sp, result, effective, runTime)
+        RecordLogger.logInfoEffective(effective)
+        RecordLogger.logPlan(result, rule.ruleName, ProcType.rule, ProcFlag.end)
         // <<<<<<<<<< qotrace end
         result
       }
+      // >>>>>>>>>> qotrace start
+      RecordLogger.logPlan(newPlan, "Unknown Batch", ProcType.other, ProcFlag.end)
+      // <<<<<<<<<< qotrace end
+      newPlan
     } else {
       val (logger, batchName) = loggerAndBatchName.get
+      // >>>>>>>>>> qotrace start
+      RecordLogger.logPlan(plan, batchName, ProcType.other, ProcFlag.start)
+      // <<<<<<<<<< qotrace end
       val newPlan = rules.foldLeft(plan) { case (sp, rule) =>
         // <<<<<<<<<< qotrace start
-        val startTime = System.nanoTime()
+        RecordLogger.logPlan(sp, rule.ruleName, ProcType.rule, ProcFlag.start)
         // >>>>>>>>>> qotrace end
 
         val result = rule.apply(sp)
 
         // >>>>>>>>>> qotrace start
-        val runTime = System.nanoTime() - startTime
         val effective = !result.fastEquals(sp)
-        RecordLogger.logRule(batchName, batchId, rule, sp, result, effective, runTime)
+        RecordLogger.logInfoEffective(effective)
+        RecordLogger.logPlan(result, rule.ruleName, ProcType.rule, ProcFlag.end)
         // <<<<<<<<<< qotrace end
 
         logger.logRule(rule.ruleName, sp, result)
         result
       }
       logger.logBatch(batchName, plan, newPlan)
+      // >>>>>>>>>> qotrace start
+      RecordLogger.logPlan(newPlan, batchName, ProcType.other, ProcFlag.end)
+      // <<<<<<<<<< qotrace end
       newPlan
     }
   }

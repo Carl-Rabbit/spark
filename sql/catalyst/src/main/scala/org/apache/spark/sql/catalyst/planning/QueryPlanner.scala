@@ -21,7 +21,7 @@ import scala.collection.mutable.ListBuffer
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
-import org.apache.spark.sql.catalyst.recorder.RecordLogger
+import org.apache.spark.sql.catalyst.recorder.{ProcFlag, ProcType, RecordLogger}
 import org.apache.spark.sql.catalyst.trees.TreeNode
 
 /**
@@ -82,19 +82,22 @@ abstract class QueryPlanner[PhysicalPlan <: TreeNode[PhysicalPlan]] {
     val curRid = ridStack.head
 
     // Collect physical plan candidates.
-    var childRidSeq = Seq[Int]()
+    val childRidSeq = ListBuffer[Int]()
     val candidates = strategies.iterator.flatMap(strategy => {
-      val startTime = System.nanoTime()
+      RecordLogger.logPlan(plan, strategy.getClass.getName, ProcType.strategy, ProcFlag.start)
 
       val newPlans = strategy(plan)
 
-      val runTime = System.nanoTime() - startTime
       val effective = newPlans.nonEmpty
+      RecordLogger.logInfoEffective(effective)
+
       val tempChildRidSeq = newPlans.indices.map(_ => getNewRid)
-      RecordLogger.logStrategy(strategy, plan, newPlans,
-        effective, runTime,
-        invokeCnt, curRid, tempChildRidSeq)
       childRidSeq ++= tempChildRidSeq
+      // if it is not effective, these two records will be removed.
+      // so assign any value to result in this case
+      val result = if (newPlans.nonEmpty) newPlans.head else plan
+      RecordLogger.logInfoStrategy(curRid, tempChildRidSeq)
+      RecordLogger.logPlan(result, strategy.getClass.getName, ProcType.strategy, ProcFlag.end)
 
       newPlans
     })
@@ -135,7 +138,7 @@ abstract class QueryPlanner[PhysicalPlan <: TreeNode[PhysicalPlan]] {
     val pruned = prunePlans(plans)
     assert(pruned.hasNext, s"No plan for $plan")
 
-    RecordLogger.logInfoStrategyPruned(invokeCnt, curRid, childRidSeq.head)
+    RecordLogger.logInfoPruned(curRid, childRidSeq.head)
 
     pruned
   }

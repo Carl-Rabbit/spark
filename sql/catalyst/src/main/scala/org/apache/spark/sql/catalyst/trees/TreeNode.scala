@@ -21,6 +21,7 @@ import java.util.UUID
 
 import scala.collection.{mutable, Map}
 import scala.collection.JavaConverters._
+import scala.collection.mutable.ListBuffer
 import scala.reflect.ClassTag
 
 import org.apache.commons.lang3.ClassUtils
@@ -31,14 +32,14 @@ import org.json4s.jackson.JsonMethods._
 import org.apache.spark.sql.catalyst.{AliasIdentifier, IdentifierWithDatabase}
 import org.apache.spark.sql.catalyst.ScalaReflection._
 import org.apache.spark.sql.catalyst.catalog.{BucketSpec, CatalogStorageFormat, CatalogTable, CatalogTableType, FunctionResource}
-import org.apache.spark.sql.catalyst.expressions._
+import org.apache.spark.sql.catalyst.expressions.{SubqueryExpression, _}
 import org.apache.spark.sql.catalyst.plans.JoinType
-import org.apache.spark.sql.catalyst.plans.logical.TableSpec
+import org.apache.spark.sql.catalyst.plans.logical.{LogicalPlan, TableSpec}
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
 import org.apache.spark.sql.catalyst.rules.RuleId
 import org.apache.spark.sql.catalyst.rules.RuleIdCollection
 import org.apache.spark.sql.catalyst.rules.UnknownRuleId
-import org.apache.spark.sql.catalyst.trees.TreePattern.TreePattern
+import org.apache.spark.sql.catalyst.trees.TreePattern.{PLAN_EXPRESSION, TreePattern}
 import org.apache.spark.sql.catalyst.util.StringUtils.PlanStringConcat
 import org.apache.spark.sql.catalyst.util.truncatedString
 import org.apache.spark.sql.errors.QueryExecutionErrors
@@ -1105,35 +1106,73 @@ abstract class TreeNode[BaseType <: TreeNode[BaseType]] extends Product with Tre
     val jsonValues = scala.collection.mutable.ArrayBuffer.empty[JValue]
 
     def collectJsonValue(tn: BaseType): Unit = {
-      if (tn.simpleNodeName.equals("PlanLater")) {
-        val planField = tn.getClass.getDeclaredField("plan")
-        planField.setAccessible(true)
-        val tn2 = planField.get(tn).asInstanceOf[BaseType]
+      val children = ListBuffer[BaseType]()
+      val links = ListBuffer[String]()    // typeof child link. Empty "" is the normal case.
 
-        val jsonFields = ("class" -> JString(tn2.getClass.getName)) ::
-          ("num-children" -> JInt(tn2.children.length)) ::
-          ("node-name" -> JString(tn2.simpleNodeName)) ::
-          ("addr" -> JInt(tn2.hashCode())) ::
-          ("plan-later" -> JInt(tn.hashCode())) ::
-          ("str" -> JString(tn2.verboseString(SQLConf.get.maxToStringFields))) ::
-          tn2.jsonFields
-        jsonValues += JObject(jsonFields)
-        tn2.children.foreach(collectJsonValue)
+      // process children nodes
 
-      } else {
-        val jsonFields = ("class" -> JString(tn.getClass.getName)) ::
-          ("num-children" -> JInt(tn.children.length)) ::
-          ("node-name" -> JString(tn.simpleNodeName)) ::
-          ("addr" -> JInt(tn.hashCode())) ::
-          ("str" -> JString(tn.verboseString(SQLConf.get.maxToStringFields))) ::
-          tn.jsonFields
-        jsonValues += JObject(jsonFields)
-        tn.children.foreach(collectJsonValue)
+      tn.children.foreach {
+        case planLater if planLater.simpleNodeName.equals("PlanLater") =>
+          children += getField(planLater, "plan").asInstanceOf[BaseType]
+          links += "PlanLater"
+        case other =>   // normal case
+          children += other
+          links += ""
       }
+
+      // process expressions
+
+      if (tn.containsPattern(PLAN_EXPRESSION)) {
+        // tn might contains subquery expression
+        // see also:
+        // org.apache.spark.sql.catalyst.analysis.Analyzer.ResolveSubquery
+        // def apply(plan: LogicalPlan)
+
+        val plan = tn.asInstanceOf[LogicalPlan]
+        val exprSubquerySeq = ListBuffer[(Expression, LogicalPlan)]()
+        plan.transformExpressionsWithPruning(_.containsPattern(PLAN_EXPRESSION)) {
+          case expr: SubqueryExpression =>
+            exprSubquerySeq.append((expr, expr.plan))
+            expr
+          case unknown =>
+            throw new Error(f"Fail to extract plan. " +
+              f"Expect SubqueryExpression, got ${unknown.simpleNodeName}")
+        }
+
+        exprSubquerySeq.foreach {
+          case (expr, plan) =>
+            children += plan.asInstanceOf[BaseType]
+            links += f"${children.size - 1}:${expr.toString}"
+        }
+      }
+
+      val jsonFields = ("class" -> JString(tn.getClass.getName)) ::
+        ("name" -> JString(tn.simpleNodeName)) ::
+        ("addr" -> JInt(tn.hashCode())) ::
+        ("str" -> JString(tn.verboseString(SQLConf.get.maxToStringFields))) ::
+        ("childNum" -> JInt(children.length)) ::
+        ("links" -> JArray(links.toList.map(JString))) ::
+        tn.jsonFields
+      jsonValues += JObject(jsonFields)
+      children.foreach(collectJsonValue)
     }
 
-    collectJsonValue(this)
+    if (simpleNodeName.equals("PlanLater")) {
+      collectJsonValue(getField(this, "plan").asInstanceOf[BaseType])
+    } else if (getClass.getName
+        .equals("org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec")) {
+      collectJsonValue(getField(this, "initialPlan").asInstanceOf[BaseType])
+    } else {
+      collectJsonValue(this)
+    }
+
     jsonValues
+  }
+
+  private def getField(obj: BaseType, fieldName: String) = {
+    val field = obj.getClass.getDeclaredField(fieldName)
+    field.setAccessible(true)
+    field.get(obj)
   }
 
   private def jsonValue: JValue = {

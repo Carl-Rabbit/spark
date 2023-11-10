@@ -23,6 +23,7 @@ import org.apache.spark.sql.catalyst.expressions
 import org.apache.spark.sql.catalyst.expressions.{ListQuery, SubqueryExpression}
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.plans.physical.UnspecifiedDistribution
+import org.apache.spark.sql.catalyst.recorder.{ProcFlag, ProcType, RecordLogger}
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.catalyst.trees.TreePattern._
 import org.apache.spark.sql.execution._
@@ -42,7 +43,18 @@ case class InsertAdaptiveSparkPlan(
 
   override def apply(plan: SparkPlan): SparkPlan = applyInternal(plan, false)
 
-  private def applyInternal(plan: SparkPlan, isSubquery: Boolean): SparkPlan = plan match {
+  // >>>>>>>>>> qotrace start
+  // Add a new function applyInternalHelper
+  // <<<<<<<<<< qotrace end
+
+  private def applyInternal(plan: SparkPlan, isSubquery: Boolean): SparkPlan = {
+    RecordLogger.logPlan(plan, ruleName, ProcType.rule, ProcFlag.start)
+    val ret = applyInternalHelper(plan, isSubquery)
+    RecordLogger.logPlan(ret, ruleName, ProcType.rule, ProcFlag.end)
+    ret
+  }
+
+  private def applyInternalHelper(plan: SparkPlan, isSubquery: Boolean): SparkPlan = plan match {
     case _ if !conf.adaptiveExecutionEnabled => plan
     case _: ExecutedCommandExec => plan
     case _: CommandResultExec => plan
@@ -58,9 +70,24 @@ case class InsertAdaptiveSparkPlan(
           val preprocessingRules = Seq(
             planSubqueriesRule)
           // Run pre-processing rules.
+          // >>>>>>>>>> qotrace start
+          RecordLogger.logPlan(plan, "AQE Pre-processing Batch", ProcType.batch, ProcFlag.start)
+          // <<<<<<<<<< qotrace end
           val newPlan = AdaptiveSparkPlanExec.applyPhysicalRules(plan, preprocessingRules)
+          // >>>>>>>>>> qotrace start
+          RecordLogger.logPlan(newPlan, "AQE Pre-processing Batch", ProcType.batch, ProcFlag.end)
+          // don't need to log the wrap of AdaptiveSparkPlanExec
+          // <<<<<<<<<< qotrace end
           logDebug(s"Adaptive execution enabled for plan: $plan")
-          AdaptiveSparkPlanExec(newPlan, adaptiveExecutionContext, preprocessingRules, isSubquery)
+          // >>>>>>>>>> qotrace start
+          RecordLogger.logPlan(plan, "Wrap With Adaptive Exec", ProcType.batch, ProcFlag.start)
+          val ret = AdaptiveSparkPlanExec(newPlan, adaptiveExecutionContext,
+            preprocessingRules, isSubquery)
+          RecordLogger.logPlan(ret, "Wrap With Adaptive Exec", ProcType.batch, ProcFlag.end)
+          // AdaptiveSparkPlanExec(newPlan, adaptiveExecutionContext,
+          // preprocessingRules, isSubquery)
+          ret
+          // <<<<<<<<<< qotrace end
         } catch {
           case SubqueryAdaptiveNotSupportedException(subquery) =>
             logWarning(s"${SQLConf.ADAPTIVE_EXECUTION_ENABLED.key} is enabled " +

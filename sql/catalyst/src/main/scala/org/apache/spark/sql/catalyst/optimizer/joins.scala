@@ -269,8 +269,7 @@ trait JoinSelectionHelper {
     // >>>>>>>>>> qotrace start
     RecordLogger.logInfoLabel(f"getBroadcastBuildSide: " +
       f"buildLeft=${buildLeft}, " +
-      f"buildRight=${buildRight}",
-      RecordLogger.AFTER)
+      f"buildRight=${buildRight}")
     // <<<<<<<<<< qotrace end
     getBuildSide(
       canBuildBroadcastLeft(joinType) && buildLeft,
@@ -293,8 +292,7 @@ trait JoinSelectionHelper {
       // >>>>>>>>>> qotrace start
       RecordLogger.logInfoLabel(f"getShuffleHashJoinBuildSide: " +
         f"hintToPreferShuffleHashJoinLeft=${hintToPreferShuffleHashJoinLeft(hint)}" +
-        f"conf.preferSortMergeJoin=${conf.preferSortMergeJoin}",
-        RecordLogger.AFTER)
+        f"conf.preferSortMergeJoin=${conf.preferSortMergeJoin}")
       // <<<<<<<<<< qotrace end
       hintToPreferShuffleHashJoinLeft(hint) ||
         (!conf.preferSortMergeJoin && canBuildLocalHashMapBySize(left, conf) &&
@@ -307,8 +305,7 @@ trait JoinSelectionHelper {
       // >>>>>>>>>> qotrace start
       RecordLogger.logInfoLabel(f"getShuffleHashJoinBuildSide: " +
         f"hintToPreferShuffleHashJoinRight=${hintToPreferShuffleHashJoinRight(hint)}" +
-        f"conf.preferSortMergeJoin=${conf.preferSortMergeJoin}",
-        RecordLogger.AFTER)
+        f"conf.preferSortMergeJoin=${conf.preferSortMergeJoin}")
       // <<<<<<<<<< qotrace end
       hintToPreferShuffleHashJoinRight(hint) ||
         (!conf.preferSortMergeJoin && canBuildLocalHashMapBySize(right, conf) &&
@@ -318,8 +315,7 @@ trait JoinSelectionHelper {
     // >>>>>>>>>> qotrace start
     RecordLogger.logInfoLabel(f"getShuffleHashJoinBuildSide: " +
       f"buildLeft=${buildLeft}, " +
-      f"buildRight=${buildRight}",
-      RecordLogger.AFTER)
+      f"buildRight=${buildRight}")
     // <<<<<<<<<< qotrace end
     getBuildSide(
       canBuildShuffledHashJoinLeft(joinType) && buildLeft,
@@ -333,8 +329,7 @@ trait JoinSelectionHelper {
     // >>>>>>>>>> qotrace start
     RecordLogger.logInfoLabel(s"Get smaller side: " +
       s"left.stats.sizeInBytes=${left.stats.sizeInBytes}, " +
-      s"right.stats.sizeInBytes=${right.stats.sizeInBytes}",
-      RecordLogger.AFTER)
+      s"right.stats.sizeInBytes=${right.stats.sizeInBytes}")
     // <<<<<<<<<< qotrace end
     if (right.stats.sizeInBytes <= left.stats.sizeInBytes) BuildRight else BuildLeft
   }
@@ -352,8 +347,7 @@ trait JoinSelectionHelper {
     // >>>>>>>>>> qotrace start
     RecordLogger.logInfoLabel(s"canBroadcastBySize: " +
       s"autoBroadcastJoinThreshold=${autoBroadcastJoinThreshold}, " +
-      s"plan.stats.sizeInBytes=${plan.stats.sizeInBytes}",
-      RecordLogger.AFTER)
+      s"plan.stats.sizeInBytes=${plan.stats.sizeInBytes}")
     // <<<<<<<<<< qotrace end
     plan.stats.sizeInBytes >= 0 && plan.stats.sizeInBytes <= autoBroadcastJoinThreshold
   }
@@ -407,8 +401,7 @@ trait JoinSelectionHelper {
   def hintToBroadcastLeft(hint: JoinHint): Boolean = {
     // >>>>>>>>>> qotrace start
     RecordLogger.logInfoLabel(s"hintToBroadcastLeft: " +
-      s"result=${hint.leftHint.exists(_.strategy.contains(BROADCAST))}",
-      RecordLogger.AFTER)
+      s"result=${hint.leftHint.exists(_.strategy.contains(BROADCAST))}")
     // <<<<<<<<<< qotrace end
     hint.leftHint.exists(_.strategy.contains(BROADCAST))
   }
@@ -416,8 +409,7 @@ trait JoinSelectionHelper {
   def hintToBroadcastRight(hint: JoinHint): Boolean = {
     // >>>>>>>>>> qotrace start
     RecordLogger.logInfoLabel(s"hintToBroadcastRight: " +
-      s"result=${hint.rightHint.exists(_.strategy.contains(BROADCAST))}",
-      RecordLogger.AFTER)
+      s"result=${hint.rightHint.exists(_.strategy.contains(BROADCAST))}")
     // <<<<<<<<<< qotrace end
     hint.rightHint.exists(_.strategy.contains(BROADCAST))
   }
@@ -425,8 +417,7 @@ trait JoinSelectionHelper {
   def hintToNotBroadcastLeft(hint: JoinHint): Boolean = {
     // >>>>>>>>>> qotrace start
     RecordLogger.logInfoLabel(s"hintToNotBroadcastLeft: " +
-      s"result=${hint.leftHint.exists(_.strategy.contains(NO_BROADCAST_HASH))}",
-      RecordLogger.AFTER)
+      s"result=${hint.leftHint.exists(_.strategy.contains(NO_BROADCAST_HASH))}")
     // <<<<<<<<<< qotrace end
     hint.leftHint.exists(_.strategy.contains(NO_BROADCAST_HASH))
   }
@@ -434,8 +425,7 @@ trait JoinSelectionHelper {
   def hintToNotBroadcastRight(hint: JoinHint): Boolean = {
     // >>>>>>>>>> qotrace start
     RecordLogger.logInfoLabel(s"hintToNotBroadcastRight: " +
-      s"result=${hint.rightHint.exists(_.strategy.contains(NO_BROADCAST_HASH))}",
-      RecordLogger.AFTER)
+      s"result=${hint.rightHint.exists(_.strategy.contains(NO_BROADCAST_HASH))}")
     // <<<<<<<<<< qotrace end
     hint.rightHint.exists(_.strategy.contains(NO_BROADCAST_HASH))
   }
@@ -481,8 +471,7 @@ trait JoinSelectionHelper {
       right: LogicalPlan): Option[BuildSide] = {
     RecordLogger.logInfoLabel("getBuildSide: " +
       f"canBuildLeft=$canBuildLeft, " +
-      f"canBuildRight=$canBuildRight",
-      RecordLogger.AFTER)
+      f"canBuildRight=$canBuildRight")
     if (canBuildLeft && canBuildRight) {
       // returns the smaller side base on its estimated physical size, if we want to build the
       // both sides.
@@ -507,8 +496,7 @@ trait JoinSelectionHelper {
     RecordLogger.logInfoLabel(s"canBuildLocalHashMapBySize: " +
       s"conf.autoBroadcastJoinThreshold=${conf.autoBroadcastJoinThreshold}, " +
       s"conf.numShufflePartitions=${conf.numShufflePartitions}, " +
-      s"plan.stats.sizeInBytes=${plan.stats.sizeInBytes}",
-      RecordLogger.AFTER)
+      s"plan.stats.sizeInBytes=${plan.stats.sizeInBytes}")
       // <<<<<<<<<< qotrace end
     plan.stats.sizeInBytes < conf.autoBroadcastJoinThreshold * conf.numShufflePartitions
   }
@@ -527,8 +515,7 @@ trait JoinSelectionHelper {
       s"conf.getConf(SQLConf.SHUFFLE_HASH_JOIN_FACTOR)=" +
       s"${conf.getConf(SQLConf.SHUFFLE_HASH_JOIN_FACTOR)}, " +
       s"a.stats.sizeInBytes=${a.stats.sizeInBytes}, " +
-      s"b.stats.sizeInBytes=${b.stats.sizeInBytes}",
-      RecordLogger.AFTER)
+      s"b.stats.sizeInBytes=${b.stats.sizeInBytes}")
     // <<<<<<<<<< qotrace end
     a.stats.sizeInBytes * conf.getConf(SQLConf.SHUFFLE_HASH_JOIN_FACTOR) <= b.stats.sizeInBytes
   }

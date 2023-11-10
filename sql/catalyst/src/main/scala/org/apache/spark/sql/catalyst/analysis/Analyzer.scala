@@ -38,6 +38,7 @@ import org.apache.spark.sql.catalyst.expressions.objects._
 import org.apache.spark.sql.catalyst.optimizer.OptimizeUpdateFields
 import org.apache.spark.sql.catalyst.plans._
 import org.apache.spark.sql.catalyst.plans.logical._
+import org.apache.spark.sql.catalyst.recorder.{ProcFlag, ProcType, RecordLogger}
 import org.apache.spark.sql.catalyst.rules._
 import org.apache.spark.sql.catalyst.streaming.StreamingRelationV2
 import org.apache.spark.sql.catalyst.trees.{AlwaysProcess, CurrentOrigin}
@@ -2419,12 +2420,24 @@ class Analyzer(override val catalogManager: CatalogManager)
         // Try to resolve the subquery plan using the regular analyzer.
         previous = current
         current = AnalysisContext.withOuterPlan(outer) {
-          executeSameContext(current)
+          // >>>>>>>>>> qotrace start
+          RecordLogger.logPlan(current, "Resolve Sub Query", ProcType.other, ProcFlag.start)
+          // executeSameContext(current)
+          val ret = executeSameContext(current)
+          RecordLogger.logPlan(ret, "Resolve Sub Query", ProcType.other, ProcFlag.end)
+          ret
+          // <<<<<<<<<< qotrace end
         }
 
         // Use the outer references to resolve the subquery plan if it isn't resolved yet.
         if (!current.resolved) {
+          // >>>>>>>>>> qotrace start
+          RecordLogger.logPlan(current, "Resolve With Outer", ProcType.other, ProcFlag.start)
+          // <<<<<<<<<< qotrace end
           current = resolveOuterReferences(current, outer)
+          // >>>>>>>>>> qotrace start
+          RecordLogger.logPlan(current, "Resolve With Outer", ProcType.other, ProcFlag.end)
+          // <<<<<<<<<< qotrace end
         }
       } while (!current.resolved && !current.fastEquals(previous))
 

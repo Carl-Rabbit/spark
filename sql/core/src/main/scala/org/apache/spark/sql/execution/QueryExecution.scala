@@ -32,7 +32,7 @@ import org.apache.spark.sql.catalyst.analysis.UnsupportedOperationChecker
 import org.apache.spark.sql.catalyst.expressions.codegen.ByteCodeStats
 import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.catalyst.plans.logical.{AppendData, Command, CommandResult, CreateTableAsSelect, LogicalPlan, OverwriteByExpression, OverwritePartitionsDynamic, ReplaceTableAsSelect, ReturnAnswer}
-import org.apache.spark.sql.catalyst.recorder.RecordLogger
+import org.apache.spark.sql.catalyst.recorder.{PhaseName, ProcFlag, ProcType, RecordLogger}
 import org.apache.spark.sql.catalyst.rules.{PlanChangeLogger, Rule}
 import org.apache.spark.sql.catalyst.util.StringUtils.PlanStringConcat
 import org.apache.spark.sql.catalyst.util.truncatedString
@@ -74,20 +74,33 @@ class QueryExecution(
 
   lazy val analyzed: LogicalPlan = executePhase(QueryPlanningTracker.ANALYSIS) {
     // >>>>>>>>>> qotrace start
-    RecordLogger.logInfoPhase(RecordLogger.PHASE_START, RecordLogger.ANALYSIS)
+    RecordLogger.logPlan(logical, PhaseName.Analysis.toString, ProcType.phase, ProcFlag.start)
     // <<<<<<<<<< qotrace end
     // We can't clone `logical` here, which will reset the `_analyzed` flag.
     val ret = sparkSession.sessionState.analyzer.executeAndCheck(logical, tracker)
     // >>>>>>>>>> qotrace start
-    RecordLogger.logInfoPhase(RecordLogger.PHASE_END, RecordLogger.ANALYSIS)
+    // we end analysis phase at the beginning of optimization
+    // RecordLogger.logPlan(ret, PhaseName.Analysis.toString, ProcType.phase, ProcFlag.end)
     // <<<<<<<<<< qotrace end
     ret
   }
 
-  lazy val commandExecuted: LogicalPlan = mode match {
-    case CommandExecutionMode.NON_ROOT => analyzed.mapChildren(eagerlyExecuteCommands)
-    case CommandExecutionMode.ALL => eagerlyExecuteCommands(analyzed)
-    case CommandExecutionMode.SKIP => analyzed
+//  lazy val commandExecuted: LogicalPlan = mode match {
+//    case CommandExecutionMode.NON_ROOT => analyzed.mapChildren(eagerlyExecuteCommands)
+//    case CommandExecutionMode.ALL => eagerlyExecuteCommands(analyzed)
+//    case CommandExecutionMode.SKIP => analyzed
+//  }
+
+  lazy val commandExecuted: LogicalPlan = {
+    RecordLogger.logPlan(analyzed, "Command Execute", ProcType.other, ProcFlag.start)
+    val ret = mode match {
+      case CommandExecutionMode.NON_ROOT => analyzed.mapChildren(eagerlyExecuteCommands)
+      case CommandExecutionMode.ALL => eagerlyExecuteCommands(analyzed)
+      case CommandExecutionMode.SKIP => analyzed
+    }
+    RecordLogger.logInfoEffective(!ret.fastEquals(analyzed))
+    RecordLogger.logPlan(ret, "Command Execute", ProcType.other, ProcFlag.end)
+    ret
   }
 
   private def commandExecutionName(command: Command): String = command match {
@@ -118,7 +131,14 @@ class QueryExecution(
     assertSupported()
     // clone the plan to avoid sharing the plan instance between different stages like analyzing,
     // optimizing and planning.
-    sparkSession.sharedState.cacheManager.useCachedData(commandExecuted.clone())
+    // >>>>>>>>>> qotrace start
+    RecordLogger.logPlan(commandExecuted, "With Cached Data", ProcType.other, ProcFlag.start)
+    // sparkSession.sharedState.cacheManager.useCachedData(commandExecuted.clone())
+    val ret = sparkSession.sharedState.cacheManager.useCachedData(commandExecuted.clone())
+    RecordLogger.logInfoEffective(!ret.fastEquals(commandExecuted))
+    RecordLogger.logPlan(ret, "With Cached Data", ProcType.other, ProcFlag.end)
+    ret
+    // <<<<<<<<<< qotrace end
   }
 
   def assertCommandExecuted(): Unit = commandExecuted
@@ -128,20 +148,25 @@ class QueryExecution(
     // the optimizing phase
     assertCommandExecuted()
     executePhase(QueryPlanningTracker.OPTIMIZATION) {
-      // >>>>>>>>>> qotrace start
-      RecordLogger.logInfoPhase(RecordLogger.PHASE_START, RecordLogger.OPTIMIZATION)
-      // <<<<<<<<<< qotrace end
       // clone the plan to avoid sharing the plan instance between different stages like analyzing,
       // optimizing and planning.
-      val plan =
-        sparkSession.sessionState.optimizer.executeAndTrack(withCachedData.clone(), tracker)
+      // >>>>>>>>>> qotrace start
+      RecordLogger.logPlan(withCachedData, PhaseName.Analysis.toString,
+        ProcType.phase, ProcFlag.end)
+      val analyzedPlan = withCachedData.clone()
+      RecordLogger.logPlan(analyzedPlan, PhaseName.Optimization.toString,
+        ProcType.phase, ProcFlag.start)
+      val plan = sparkSession.sessionState.optimizer.executeAndTrack(analyzedPlan, tracker)
+//      val plan =
+//        sparkSession.sessionState.optimizer.executeAndTrack(withCachedData.clone(), tracker)
+      // <<<<<<<<<< qotrace end
       // We do not want optimized plans to be re-analyzed as literals that have been constant
       // folded and such can cause issues during analysis. While `clone` should maintain the
       // `analyzed` state of the LogicalPlan, we set the plan as analyzed here as well out of
       // paranoia.
       plan.setAnalyzed()
       // >>>>>>>>>> qotrace start
-      RecordLogger.logInfoPhase(RecordLogger.PHASE_END, RecordLogger.OPTIMIZATION)
+      RecordLogger.logPlan(plan, PhaseName.Optimization.toString, ProcType.phase, ProcFlag.end)
       // <<<<<<<<<< qotrace end
       plan
     }
@@ -157,14 +182,15 @@ class QueryExecution(
       // >>>>>>>>>> qotrace start
       // invoke lazy computation first
       val plan = optimizedPlan.clone()
-      RecordLogger.logInfoPhase(RecordLogger.PHASE_START, RecordLogger.PLANNING)
+      RecordLogger.logPlan(plan, PhaseName.Planning.toString, ProcType.phase, ProcFlag.start)
+      RecordLogger.logPlan(plan, "Create Spark Plan", ProcType.other, ProcFlag.start)
+      // QueryExecution.createSparkPlan(sparkSession, planner, optimizedPlan.clone())
       val ret = QueryExecution.createSparkPlan(sparkSession, planner, plan)
-      RecordLogger.logInfoPhase(RecordLogger.PHASE_END, RecordLogger.PLANNING)
+      RecordLogger.logPlan(ret, "Create Spark Plan", ProcType.other, ProcFlag.end)
       ret
-      // <<<<<<<<<< qotrace end
       // Clone the logical plan here, in case the planner rules change the states of the logical
       // plan.
-      // QueryExecution.createSparkPlan(sparkSession, planner, optimizedPlan.clone())
+      // <<<<<<<<<< qotrace end
     }
   }
 
@@ -178,8 +204,10 @@ class QueryExecution(
       // >>>>>>>>>> qotrace start
       // invoke lazy computation first
       val plan = sparkPlan.clone()
-      RecordLogger.logInfoPhase(RecordLogger.PHASE_START, RecordLogger.PLANNING)
+      RecordLogger.logPlan(plan, "Preparations", ProcType.other, ProcFlag.start)
       val ret = QueryExecution.prepareForExecution(preparations, plan)
+      RecordLogger.logPlan(ret, "Preparations", ProcType.other, ProcFlag.end)
+      RecordLogger.logPlan(ret, PhaseName.Planning.toString, ProcType.phase, ProcFlag.end)
       // We do not add an end flag as the rest part is all included in this phase
       // RecordLogger.logPhase(RecordLogger.PHASE_END, RecordLogger.EXECUTION)
       ret
@@ -468,24 +496,25 @@ object QueryExecution {
       plan: SparkPlan): SparkPlan = {
     val planChangeLogger = new PlanChangeLogger[SparkPlan]()
     // >>>>>>>>>> qotrace start
-    val batchId = UUID.randomUUID.toString
+    RecordLogger.logPlan(plan, "Preparations", ProcType.batch, ProcFlag.start)
     // <<<<<<<<<< qotrace end
     val preparedPlan = preparations.foldLeft(plan) { case (sp, rule) =>
       // <<<<<<<<<< qotrace start
-      val startTime = System.nanoTime()
+      RecordLogger.logPlan(sp, rule.ruleName, ProcType.rule, ProcFlag.start)
       // >>>>>>>>>> qotrace end
-
       val result = rule.apply(sp)
-
       // >>>>>>>>>> qotrace start
-      val runTime = System.nanoTime() - startTime
       val effective = !result.fastEquals(sp)
-      RecordLogger.logRule("Preparations", batchId, rule, sp, result, effective, runTime)
+      RecordLogger.logInfoEffective(effective)
+      RecordLogger.logPlan(result, rule.ruleName, ProcType.rule, ProcFlag.end)
       // <<<<<<<<<< qotrace end
 
       planChangeLogger.logRule(rule.ruleName, sp, result)
       result
     }
+    // >>>>>>>>>> qotrace start
+    RecordLogger.logPlan(preparedPlan, "Preparations", ProcType.batch, ProcFlag.end)
+    // <<<<<<<<<< qotrace end
     planChangeLogger.logBatch("Preparations", plan, preparedPlan)
     preparedPlan
   }
@@ -502,13 +531,16 @@ object QueryExecution {
     // TODO: We use next(), i.e. take the first plan returned by the planner, here for now,
     //       but we will implement to choose the best plan.
     // >>>>>>>>>> qotrace start
+    // this start and end records might be merged by outer records (with same name)
+    RecordLogger.logPlan(plan, "Create Spark Plan", ProcType.other, ProcFlag.start)
+    RecordLogger.logPlan(plan, "InsertReturnAnswer", ProcType.other, ProcFlag.start)
     val planWithReturn = ReturnAnswer(plan)
-    RecordLogger.logAction("Planning", UUID.randomUUID().toString,
-      "InsertReturnAnswer",
-      plan, planWithReturn)
-    planner.plan(planWithReturn).next()
-    // <<<<<<<<<< qotrace end
+    RecordLogger.logPlan(planWithReturn, "InsertReturnAnswer", ProcType.other, ProcFlag.end)
     // planner.plan(ReturnAnswer(plan)).next()
+    val sparkPlan = planner.plan(planWithReturn).next()
+    RecordLogger.logPlan(sparkPlan, "Create Spark Plan", ProcType.other, ProcFlag.end)
+    sparkPlan
+    // <<<<<<<<<< qotrace end
   }
 
   /**

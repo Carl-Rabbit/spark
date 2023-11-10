@@ -17,11 +17,9 @@
 
 package org.apache.spark.sql.catalyst.rules
 
-import java.util.UUID
-
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.QueryPlanningTracker
-import org.apache.spark.sql.catalyst.recorder.RecordLogger
+import org.apache.spark.sql.catalyst.recorder.{ProcFlag, ProcType, RecordLogger}
 import org.apache.spark.sql.catalyst.trees.TreeNode
 import org.apache.spark.sql.catalyst.util.DateTimeConstants.NANOS_PER_SECOND
 import org.apache.spark.sql.catalyst.util.sideBySide
@@ -217,11 +215,15 @@ abstract class RuleExecutor[TreeType <: TreeNode[_]] extends Logging {
       while (continue) {
 
         // >>>>>>>>>> qotrace start
-        val batchId = UUID.randomUUID.toString
+        RecordLogger.logPlan(curPlan, batch.name, ProcType.batch, ProcFlag.start)
         // <<<<<<<<<< qotrace end
 
         curPlan = batch.rules.foldLeft(curPlan) {
           case (plan, rule) =>
+            // >>>>>>>>>> qotrace start
+            RecordLogger.logPlan(plan, rule.ruleName, ProcType.rule, ProcFlag.start)
+            // <<<<<<<<<< qotrace end
+
             val startTime = System.nanoTime()
             val result = rule(plan)
             val runTime = System.nanoTime() - startTime
@@ -239,7 +241,8 @@ abstract class RuleExecutor[TreeType <: TreeNode[_]] extends Logging {
             tracker.foreach(_.recordRuleInvocation(rule.ruleName, runTime, effective))
 
             // >>>>>>>>>> qotrace start
-            RecordLogger.logRule(batch.name, batchId, rule, plan, result, effective, runTime)
+            RecordLogger.logInfoEffective(effective)
+            RecordLogger.logPlan(result, rule.ruleName, ProcType.rule, ProcFlag.end)
             // <<<<<<<<<< qotrace end
 
             // Run the structural integrity checker against the plan after each rule.
@@ -281,8 +284,12 @@ abstract class RuleExecutor[TreeType <: TreeNode[_]] extends Logging {
           continue = false
         }
         lastPlan = curPlan
-      }
 
+        // >>>>>>>>>> qotrace start
+        // one iteration of batch ends here
+        RecordLogger.logPlan(curPlan, batch.name, ProcType.batch, ProcFlag.end)
+        // <<<<<<<<<< qotrace end
+      }
       planChangeLogger.logBatch(batch.name, batchStartPlan, curPlan)
     }
     planChangeLogger.logMetrics(RuleExecutor.getCurrentMetrics() - beforeMetrics)

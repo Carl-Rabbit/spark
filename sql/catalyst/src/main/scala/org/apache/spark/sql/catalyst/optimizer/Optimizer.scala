@@ -292,6 +292,7 @@ abstract class Optimizer(catalogManager: CatalogManager)
       RewriteAsOfJoin)
 
     override def apply(plan: LogicalPlan): LogicalPlan = {
+      // qotrace: we don't change these part for now.
       rules.foldLeft(plan) { case (sp, rule) => rule.apply(sp) }
         .transformAllExpressionsWithPruning(_.containsPattern(PLAN_EXPRESSION)) {
           case s: SubqueryExpression =>

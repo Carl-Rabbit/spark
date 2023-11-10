@@ -201,7 +201,7 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
       case j @ ExtractEquiJoinKeys(joinType, leftKeys, rightKeys, nonEquiCond,
           _, left, right, hint) =>
         // >>>>>>>>>> qotrace start
-        RecordLogger.logInfoJoinSelection(plan, left.stats, right.stats, hint)
+        RecordLogger.logInfoJoinSel(left.stats, right.stats, hint)
         // <<<<<<<<<< qotrace end
         def createBroadcastHashJoin(onlyLookingAtHint: Boolean) = {
           val buildSide = getBroadcastBuildSide(
@@ -209,7 +209,7 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
           checkHintBuildSide(onlyLookingAtHint, buildSide, joinType, hint, true)
           // >>>>>>>>>> qotrace start
           RecordLogger.logInfoLabel(f"JoinSelection: equi-join, createBroadcastHashJoin, " +
-            f"buildSide=${buildSide}", RecordLogger.AFTER)
+            f"buildSide=${buildSide}")
           // <<<<<<<<<< qotrace end
           buildSide.map {
             buildSide =>
@@ -230,7 +230,7 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
           checkHintBuildSide(onlyLookingAtHint, buildSide, joinType, hint, false)
           // >>>>>>>>>> qotrace start
           RecordLogger.logInfoLabel(f"JoinSelection: equi-join, createShuffleHashJoin, " +
-            f"buildSide=${buildSide}", RecordLogger.AFTER)
+            f"buildSide=${buildSide}")
           // <<<<<<<<<< qotrace end
           buildSide.map {
             buildSide =>
@@ -248,8 +248,7 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
         def createSortMergeJoin() = {
           // >>>>>>>>>> qotrace start
           RecordLogger.logInfoLabel(f"JoinSelection: equi-join, createSortMergeJoin, " +
-            f"RowOrdering.isOrderable(leftKeys)=${RowOrdering.isOrderable(leftKeys)}",
-            RecordLogger.AFTER)
+            f"RowOrdering.isOrderable(leftKeys)=${RowOrdering.isOrderable(leftKeys)}")
           // <<<<<<<<<< qotrace end
           if (RowOrdering.isOrderable(leftKeys)) {
             Some(Seq(joins.SortMergeJoinExec(
@@ -277,8 +276,7 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
             .getOrElse {
               // >>>>>>>>>> qotrace start
               RecordLogger.logInfoLabel(f"JoinSelection: equi-join, " +
-                f"create BroadcastNestedLoopJoinExec",
-                RecordLogger.AFTER)
+                f"create BroadcastNestedLoopJoinExec")
               // <<<<<<<<<< qotrace end
               // This join could be very slow or OOM
               val buildSide = getSmallerSide(left, right)
@@ -299,7 +297,7 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
 
       case j @ ExtractSingleColumnNullAwareAntiJoin(leftKeys, rightKeys) =>
         // >>>>>>>>>> qotrace start
-        RecordLogger.logInfoJoinSelection(plan, j.left.stats, j.right.stats, j.hint)
+        RecordLogger.logInfoJoinSel(j.left.stats, j.right.stats, j.hint)
         // <<<<<<<<<< qotrace end
         Seq(joins.BroadcastHashJoinExec(leftKeys, rightKeys, LeftAnti, BuildRight,
           None, planLater(j.left), planLater(j.right), isNullAwareAntiJoin = true))
@@ -322,7 +320,7 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
       //      left side for right join, and broadcasts right side for left join.
       case logical.Join(left, right, joinType, condition, hint) =>
         // >>>>>>>>>> qotrace start
-        RecordLogger.logInfoJoinSelection(plan, left.stats, right.stats, hint)
+        RecordLogger.logInfoJoinSel(left.stats, right.stats, hint)
         // <<<<<<<<<< qotrace end
         checkHintNonEquiJoin(hint)
         val desiredBuildSide = if (joinType.isInstanceOf[InnerLike] || joinType == FullOuter) {
@@ -336,8 +334,7 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
         }
         // >>>>>>>>>> qotrace start
         RecordLogger.logInfoLabel(f"JoinSelection: non-equi-join " +
-          f"desiredBuildSide=${desiredBuildSide}",
-          RecordLogger.AFTER)
+          f"desiredBuildSide=${desiredBuildSide}")
         // <<<<<<<<<< qotrace end
 
         def createBroadcastNLJoin(buildLeft: Boolean, buildRight: Boolean) = {
@@ -352,8 +349,7 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
           }
           // >>>>>>>>>> qotrace start
           RecordLogger.logInfoLabel(f"JoinSelection: non-equi-join " +
-            f"maybeBuildSide=${maybeBuildSide}",
-            RecordLogger.AFTER)
+            f"maybeBuildSide=${maybeBuildSide}")
           // <<<<<<<<<< qotrace end
 
           maybeBuildSide.map { buildSide =>
@@ -382,14 +378,12 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
 
         if (hint.isEmpty) {
           // >>>>>>>>>> qotrace start
-          RecordLogger.logInfoLabel(f"JoinSelection: non-equi-join createJoinWithoutHint",
-            RecordLogger.AFTER)
+          RecordLogger.logInfoLabel(f"JoinSelection: non-equi-join createJoinWithoutHint")
           // <<<<<<<<<< qotrace end
           createJoinWithoutHint()
         } else {
           // >>>>>>>>>> qotrace start
-          RecordLogger.logInfoLabel(f"JoinSelection: non-equi-join createJoinWithHint",
-            RecordLogger.AFTER)
+          RecordLogger.logInfoLabel(f"JoinSelection: non-equi-join createJoinWithHint")
           // <<<<<<<<<< qotrace end
           createBroadcastNLJoin(hintToBroadcastLeft(hint), hintToBroadcastRight(hint))
             .orElse { if (hintToShuffleReplicateNL(hint)) createCartesianProduct() else None }
