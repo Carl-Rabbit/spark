@@ -365,6 +365,10 @@ case class Literal (value: Any, dataType: DataType) extends LeafExpression {
           toDayTimeIntervalString(value.asInstanceOf[Long], ANSI_STYLE, startField, endField)
         case YearMonthIntervalType(startField, endField) =>
           toYearMonthIntervalString(value.asInstanceOf[Int], ANSI_STYLE, startField, endField)
+        // >>>>>>>>>> qotrace start
+        case StringType =>
+          '"' + other.toString + '"'
+        // <<<<<<<<<< qotrace end
         case _ =>
           other.toString
       }

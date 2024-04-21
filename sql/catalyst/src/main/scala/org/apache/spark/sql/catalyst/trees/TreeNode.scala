@@ -1142,18 +1142,27 @@ abstract class TreeNode[BaseType <: TreeNode[BaseType]] extends Product with Tre
         exprSubquerySeq.foreach {
           case (expr, plan) =>
             children += plan.asInstanceOf[BaseType]
-            links += f"${children.size - 1}:${expr.toString}"
+            links += f"${children.size - 1}:subquery${expr.toString}"
         }
       }
 
+      // process _canonicalized of QueryStageExec
+      if (getClass.getName.equals("org.apache.spark.sql.execution.adaptive.QueryStageExec")) {
+        children += getField(this, "_canonicalized").asInstanceOf[BaseType]
+        links += f"${children.size - 1}:stage"
+      }
+
+      // collect data of current node tn
       val jsonFields = ("class" -> JString(tn.getClass.getName)) ::
         ("name" -> JString(tn.simpleNodeName)) ::
         ("addr" -> JInt(tn.hashCode())) ::
-        ("str" -> JString(tn.verboseString(SQLConf.get.maxToStringFields))) ::
+//        ("str" -> JString(tn.verboseString(SQLConf.get.maxToStringFields))) ::
+        ("str" -> JString(tn.verboseString(10000))) ::
         ("childNum" -> JInt(children.length)) ::
         ("links" -> JArray(links.toList.map(JString))) ::
         tn.jsonFields
       jsonValues += JObject(jsonFields)
+      // then gather data on children
       children.foreach(collectJsonValue)
     }
 
